@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>北海道 6 日遊 Travel Planner 6.3</title>
+  <title>北海道 6 日遊 Travel Planner 6.4</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -435,6 +435,7 @@
       </div>
       <img id="receipt-preview" class="receipt-preview" alt="收據照片">
       <div id="receipt-status" class="offline-note"></div>
+      <div id="ocr-engine-note" class="feature-hint">OCR：優先使用 PP-OCRv5（台／日／英文），若瀏覽器載入失敗會自動改用相容模式。</div>
       <details style="margin-top:8px">
         <summary style="font-size:.78rem;color:#667085;cursor:pointer;">查看 OCR 原始辨識文字</summary>
         <textarea id="ocr-raw-text" class="input-control" rows="6" style="margin-top:6px;font-size:.72rem;" placeholder="OCR 原始文字會顯示在這裡"></textarea>
@@ -1065,23 +1066,78 @@
       return c.toDataURL('image/jpeg',.96);
     }
 
+    // --- OCR 6.4: PP-OCRv5 first, Tesseract fallback ---
+    let paddleModule=null, paddleOCR=null, paddleLoadFailed=false;
     let ocrWorker=null, ocrWorkerLang='';
+
+    async function dataURLToBlob(dataUrl){
+      const r=await fetch(dataUrl); return await r.blob();
+    }
+    function setOCRProgressText(text,pct=0){
+      const wrap=document.getElementById('ocr-progress-wrap'); if(!wrap)return;
+      wrap.style.display='block';
+      document.getElementById('ocr-progress-text').textContent=text;
+      document.getElementById('ocr-progress-pct').textContent=Math.round(pct)+'%';
+      document.getElementById('ocr-progress-bar').style.width=Math.max(0,Math.min(100,pct))+'%';
+    }
+    async function getPaddleOCR(){
+      if(paddleOCR) return paddleOCR;
+      if(paddleLoadFailed) throw new Error('PP-OCRv5 本次工作階段載入失敗');
+      try{
+        setOCRProgressText('載入 PP-OCRv5 引擎…',8);
+        // 官方 PaddleOCR.js；用 ESM CDN 讓目前的 GitHub Pages 靜態 PWA 不必另外建置 npm 專案。
+        paddleModule=await import('https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js/+esm');
+        const PaddleOCR=paddleModule.PaddleOCR;
+        if(!PaddleOCR) throw new Error('PaddleOCR 模組格式不相容');
+        setOCRProgressText('第一次使用：下載 OCR 模型…',15);
+        paddleOCR=await PaddleOCR.create({
+          lang:'ch', ocrVersion:'PP-OCRv5',
+          ortOptions:{backend:'wasm',wasmPaths:'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/',numThreads:1,simd:true}
+        });
+        return paddleOCR;
+      }catch(e){ paddleLoadFailed=true; console.warn('PP-OCRv5 unavailable, fallback to Tesseract',e); throw e; }
+    }
+    async function runPaddleOCR(dataUrl){
+      const ocr=await getPaddleOCR();
+      setOCRProgressText('PP-OCRv5 正在辨識收據…',45);
+      const blob=await dataURLToBlob(dataUrl);
+      const results=await ocr.predict(blob,{textDetLimitSideLen:1280,textDetBoxThresh:.45,textRecScoreThresh:.35});
+      const result=results && results[0];
+      const items=(result?.items||[]).filter(x=>String(x.text||'').trim());
+      if(!items.length) throw new Error('PP-OCRv5 沒有辨識到文字');
+      // 依文字框由上到下、由左到右排序，保留收據行結構與信心分數。
+      const norm=items.map(it=>{
+        const pts=it.poly||[];
+        const xs=pts.map(p=>Number(p[0]||0)), ys=pts.map(p=>Number(p[1]||0));
+        return {text:String(it.text||'').trim(),score:Number(it.score||0),x:xs.length?Math.min(...xs):0,y:ys.length?Math.min(...ys):0,h:ys.length?Math.max(...ys)-Math.min(...ys):20};
+      }).sort((a,b)=>a.y-b.y||a.x-b.x);
+      const lines=[];
+      for(const it of norm){
+        let line=lines.find(l=>Math.abs(l.y-it.y)<=Math.max(12,Math.min(l.h,it.h)*.65));
+        if(!line){line={y:it.y,h:it.h,parts:[]};lines.push(line)}
+        line.parts.push(it);
+      }
+      lines.sort((a,b)=>a.y-b.y);
+      const text=lines.map(l=>l.parts.sort((a,b)=>a.x-b.x).map(p=>p.text).join('    ')).join('\n');
+      const avg=norm.reduce((a,x)=>a+x.score,0)/norm.length;
+      setOCRProgressText('PP-OCRv5 辨識完成',100);
+      return {text,items:norm,avgScore:avg,engine:'PP-OCRv5'};
+    }
+
     async function getOCRWorker(region){
       const lang=region==='jp' ? 'jpn+eng' : region==='tw' ? 'chi_tra+eng' : 'chi_tra+jpn+eng';
       if(ocrWorker && ocrWorkerLang===lang) return ocrWorker;
       if(ocrWorker){ try{await ocrWorker.terminate()}catch(e){} ocrWorker=null; }
-      if(!window.Tesseract) throw new Error('OCR 引擎尚未載入。第一次使用請保持網路連線後再試一次。');
+      if(!window.Tesseract) throw new Error('相容 OCR 引擎尚未載入。第一次使用請保持網路連線後再試一次。');
       ocrWorker=await Tesseract.createWorker(lang,1,{logger:m=>updateOCRProgress(m)});
       ocrWorkerLang=lang;
-      // 收據通常是一整欄文字；PSM 4 對收據的多列／欄位版面通常比強制單一文字區塊更合適。
       try{ await ocrWorker.setParameters({tessedit_pageseg_mode:'4', preserve_interword_spaces:'1'}); }catch(e){}
       return ocrWorker;
     }
     function updateOCRProgress(m){
-      const wrap=document.getElementById('ocr-progress-wrap'); if(!wrap)return; wrap.style.display='block';
-      const p=Math.round((m.progress||0)*100); document.getElementById('ocr-progress-pct').textContent=p+'%'; document.getElementById('ocr-progress-bar').style.width=p+'%';
-      const map={'loading tesseract core':'載入 OCR 核心','initializing tesseract':'初始化 OCR','loading language traineddata':'載入台／日語言模型','initializing api':'初始化語言模型','recognizing text':'辨識收據文字'};
-      document.getElementById('ocr-progress-text').textContent=map[m.status]||m.status||'OCR 處理中';
+      const p=Math.round((m.progress||0)*100);
+      const map={'loading tesseract core':'載入相容 OCR 核心','initializing tesseract':'初始化相容 OCR','loading language traineddata':'載入台／日語言模型','initializing api':'初始化語言模型','recognizing text':'相容模式辨識中'};
+      setOCRProgressText(map[m.status]||m.status||'OCR 處理中',p);
     }
     async function makeOCRVariant(dataUrl, mode='contrast'){
       const img=new Image(); img.src=dataUrl; await img.decode();
@@ -1091,50 +1147,46 @@
       c.width=sw; c.height=sh; ctx.drawImage(img,sx,sy,sw,sh,0,0,sw,sh);
       const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;
       for(let i=0;i<d.length;i+=4){
-        const g=d[i];
-        // 熱感紙常有灰底與淡字：拉高局部可讀性，但不做過度二值化。
-        let v=(g-150)*1.75+150;
+        const g=d[i]; let v=(g-150)*1.75+150;
         if(mode==='binary') v=v<188?0:255;
         v=Math.max(0,Math.min(255,v)); d[i]=d[i+1]=d[i+2]=v;
       }
       ctx.putImageData(im,0,0); return c.toDataURL('image/png');
+    }
+    async function runTesseractFallback(selected){
+      const worker=await getOCRWorker(selected), texts=[];
+      try{ await worker.setParameters({tessedit_pageseg_mode:'4',preserve_interword_spaces:'1'}); }catch(e){}
+      let ret=await worker.recognize(currentReceiptImage,{}, {text:true}); if(ret?.data?.text) texts.push(ret.data.text);
+      const contrast=await makeOCRVariant(currentReceiptImage,'contrast');
+      try{ await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'}); }catch(e){}
+      ret=await worker.recognize(contrast,{}, {text:true}); if(ret?.data?.text) texts.push(ret.data.text);
+      const bottom=await makeOCRVariant(currentReceiptImage,'bottom');
+      ret=await worker.recognize(bottom,{}, {text:true}); if(ret?.data?.text) texts.push(ret.data.text);
+      return {text:texts.filter(Boolean).join('\n--- OCR PASS ---\n'),engine:'相容 OCR'};
     }
 
     async function runReceiptOCR(){
       if(!currentReceiptImage){ alert('請先拍攝或選擇收據照片。'); return; }
       const status=document.getElementById('receipt-status'),wrap=document.getElementById('ocr-progress-wrap'); wrap.style.display='block';
       const selected=document.getElementById('receipt-region')?.value || 'auto';
-      status.innerHTML='🔎 正在做多段 OCR：完整收據＋高對比＋總額區。請稍候，這會比舊版多花一些時間。';
+      status.innerHTML='🔎 正在辨識收據。新版會先使用 PP-OCRv5；若手機瀏覽器不相容，會自動切換備援 OCR。';
       try{
-        const worker=await getOCRWorker(selected);
-        const texts=[];
-        // Pass 1：完整收據，保留版面。
-        try{ await worker.setParameters({tessedit_pageseg_mode:'4',preserve_interword_spaces:'1'}); }catch(e){}
-        let ret=await worker.recognize(currentReceiptImage,{}, {text:true});
-        if(ret?.data?.text) texts.push(ret.data.text);
-        // Pass 2：高對比整張，救回淡色熱感紙中文字。
-        const contrast=await makeOCRVariant(currentReceiptImage,'contrast');
-        try{ await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'}); }catch(e){}
-        ret=await worker.recognize(contrast,{}, {text:true});
-        if(ret?.data?.text) texts.push(ret.data.text);
-        // Pass 3：收據下半部，專門強化「合計／總計／付款」區。
-        const bottom=await makeOCRVariant(currentReceiptImage,'bottom');
-        ret=await worker.recognize(bottom,{}, {text:true});
-        if(ret?.data?.text) texts.push(ret.data.text);
-        const text=texts.filter(Boolean).join('\n--- OCR PASS ---\n');
+        let out, fallbackReason='';
+        try{ out=await runPaddleOCR(currentReceiptImage); }
+        catch(e){ fallbackReason=e.message||String(e); status.innerHTML='↪️ PP-OCRv5 在這台裝置未成功啟動，正在自動改用備援 OCR…'; out=await runTesseractFallback(selected); }
+        const text=out.text||'';
         const raw=document.getElementById('ocr-raw-text'); if(raw) raw.value=text;
-        if(!text.trim()) throw new Error('沒有辨識到可用文字，請讓收據填滿畫面、平整、避免陰影後重拍。');
+        if(!text.trim()) throw new Error('沒有辨識到可用文字，請讓收據填滿畫面、平整、避免反光與陰影後重拍。');
         const region=selected==='auto'?detectReceiptRegion(text):selected;
-        document.getElementById('receipt-region').value=region;
+        if(region==='tw'||region==='jp') document.getElementById('receipt-region').value=region;
         const parsed=fillReceiptFromText(text,region);
-        if(parsed?.reliable){
-          status.innerHTML='✅ OCR 完成：'+(region==='tw'?'🇹🇼 台灣模式':'🇯🇵 日本模式')+'。已用多段辨識交叉抓取品項與總額，請最後核對一次再入帳。';
-        }else{
-          status.innerHTML='⚠️ OCR 已完成，但這張收據的辨識信心不足。系統沒有硬猜金額；請依上方照片核對或使用「手動輸入」。';
-        }
+        const scoreNote=out.avgScore ? '，平均辨識信心 '+Math.round(out.avgScore*100)+'%' : '';
+        const fb=fallbackReason ? '<br><span style="font-size:.72rem;color:#777">PP-OCRv5 未啟動原因：'+escapeHtml(fallbackReason)+'</span>' : '';
+        if(parsed?.reliable) status.innerHTML='✅ '+out.engine+' 完成'+scoreNote+'。已抓取品項與總額，請核對後再入帳。'+fb;
+        else status.innerHTML='⚠️ '+out.engine+' 已完成'+scoreNote+'，但金額／品項信心不足，因此不強行猜測。請依照片修正後再入帳。'+fb;
       }catch(err){
-        console.error(err); status.innerHTML='⚠️ OCR 無法完成：'+escapeHtml(err.message||String(err))+'<br>照片仍保留，可改用手動輸入。';
-      }finally{ setTimeout(()=>{wrap.style.display='none'},700); }
+        console.error(err); status.innerHTML='⚠️ OCR 無法完成：'+escapeHtml(err.message||String(err))+'<br>照片仍保留，可直接使用「手動輸入」。';
+      }finally{ setTimeout(()=>{wrap.style.display='none'},900); }
     }
     function detectReceiptRegion(text){
       const choice=document.getElementById('receipt-region')?.value;
@@ -1468,7 +1520,7 @@
       row('serviceWorker' in navigator,'Service Worker','serviceWorker' in navigator?'瀏覽器支援 PWA 離線快取':'此瀏覽器不支援');
       row(!!getSpeechRecognition(),'網頁語音辨識',getSpeechRecognition()?'偵測到 SpeechRecognition API':'此 Chrome/裝置未提供 Web Speech API，可使用鍵盤語音');
       row(!!navigator.mediaDevices?.getUserMedia,'相機／麥克風 API',navigator.mediaDevices?.getUserMedia?'getUserMedia 可用':'媒體 API 不可用');
-      row(!!window.Tesseract,'台／日 OCR 引擎',window.Tesseract?'Tesseract.js 已載入':'尚未載入；請確認第一次使用時有網路');
+      row(true,'台／日 OCR 引擎','PP-OCRv5 會在第一次掃描收據時載入；若不相容會自動切換 Tesseract 備援');
       row(navigator.onLine,'目前網路',navigator.onLine?'線上':'離線；已快取功能仍可使用');
       el.innerHTML=rows.join('')+'<div style="margin-top:8px;font-size:.74rem;">裝置：'+escapeHtml(navigator.userAgent)+'</div>';
       if(navigator.mediaDevices?.getUserMedia && isRealWebOrigin()){
