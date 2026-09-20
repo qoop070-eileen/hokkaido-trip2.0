@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>北海道 6 日遊 Travel Planner 6.9</title>
+  <title>北海道 6 日遊 Travel Planner 6.10</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -588,7 +588,7 @@
       '薬':'藥品','医薬品':'藥品','化粧品':'化妝品','化粧水':'化妝水','乳液':'乳液','洗顔':'洗面用品',
       '日焼け止め':'防曬','シャンプー':'洗髮精','トリートメント':'護髮','マスク':'口罩／面膜',
       'ティッシュ':'面紙','歯ブラシ':'牙刷','歯磨き粉':'牙膏','洗剤':'清潔劑',
-      '袋':'袋子','レジ袋':'購物袋','お土産':'伴手禮','免税':'免稅','免税対象':'免稅對象','免税額':'免稅金額','非課税':'非課稅','税込':'含稅','税抜':'未稅','消費税':'消費稅','軽減税率':'優惠稅率','軽':'優惠稅率商品','キャッシュレス還元':'無現金支付回饋','還元':'回饋','オールドファッション':'Old Fashion 原味甜甜圈','たっぷりクリームデニッシュ':'奶油丹麥麵包','メロンパン':'哈密瓜麵包',
+      '袋':'袋子','レジ袋':'購物袋','お土産':'伴手禮','免税':'免稅','免税対象':'免稅對象','免税額':'免稅金額','非課税':'非課稅','税込':'含稅','税抜':'未稅','消費税':'消費稅','軽減税率':'優惠稅率','軽':'優惠稅率商品','キャッシュレス還元':'無現金支付回饋','還元':'回饋','オールドファッション':'Old Fashion 原味甜甜圈','たっぷりクリームデニッシュ':'滿餡奶油丹麥麵包','クリームデニッシュ':'奶油丹麥麵包','メロンパン':'日式甜瓜麵包（Melon Pan）','カレーパン':'咖哩麵包','あんぱん':'紅豆麵包','クリームパン':'奶油麵包','チーズ':'起司','バター':'奶油','ヨーグルト':'優格','プリン':'布丁','ドーナツ':'甜甜圈',
       'セイコーマート':'Seicomart 便利商店','ローソン':'Lawson 便利商店','ファミリーマート':'FamilyMart／全家便利商店','FamilyMart':'FamilyMart／全家便利商店',
       'セブンイレブン':'7-ELEVEN 便利商店','ドラッグストア':'藥妝店',
       '發票':'發票','電子發票':'電子發票','統一發票':'統一發票','交易明細':'交易明細',
@@ -1094,7 +1094,7 @@
       return c.toDataURL('image/jpeg',.96);
     }
 
-    // --- OCR 6.8: Taiwan/Japan receipt + tax-free + bilingual parser ---
+    // --- OCR 6.10: Taiwan/Japan receipt semantic parser + confidence checks ---
     let paddleModule=null, paddleOCR=null, paddleLoadFailed=false;
     let ocrWorker=null, ocrWorkerLang='';
 
@@ -1264,6 +1264,8 @@
       updateReceiptCurrencyUI(region);
       let lines=text.split(/\n+/).map(x=>x.replace(/[|]/g,' ').replace(/\s+/g,' ').trim()).filter(Boolean);
       const clean=s=>String(s||'').replace(/[，,]/g,'').replace(/\s+/g,' ').trim();
+      // 6.10：判斷收據關鍵字時忽略 OCR 插入的空白，例如「合 計」「折 價 券 數 量」。
+      const compact=s=>clean(s).replace(/[\s　:：・･._-]+/g,'');
       const allRaw=lines.join('\n');
 
       // 6.6：若已辨識到明確品牌，丟掉品牌之前的照片背景文字。
@@ -1276,7 +1278,7 @@
       const totalHits=[];
       const totalWords=region==='tw' ? /(總\s*金額|總\s*計|合\s*計|應\s*付|實\s*付|發票金額|聯名\s*[:：]?|信用卡\s*[:：]?)/i : /(合計|総額|お会計|TOTAL|お支払|支払額|現計|クレジット|交通系マネー支払)/i;
       for(const line of lines){
-        if(!totalWords.test(line)) continue;
+        if(!totalWords.test(line) && !totalWords.test(compact(line))) continue;
         const nums=moneyNums(line).filter(n=>n>0);
         if(nums.length) totalHits.push(nums[nums.length-1]);
       }
@@ -1296,7 +1298,7 @@
       const hasLettersOrCJK=line=>/[A-Za-z\u3400-\u9fff\u3040-\u30ff]/.test(line);
       const looksName=line=>{
         const x=clean(line);
-        if(!x || x.length<2 || x.length>55 || meta.test(x) || nonItemRe.test(x) || isPureCode(x)) return false;
+        if(!x || x.length<2 || x.length>55 || meta.test(x) || meta.test(compact(x)) || nonItemRe.test(x) || nonItemRe.test(compact(x)) || isPureCode(x)) return false;
         if(/^NO\b/i.test(x) || /^(?:\d+[\s*×xX-]*)+$/.test(x)) return false;
         return hasLettersOrCJK(x);
       };
@@ -1320,7 +1322,7 @@
 
       for(let i=0;i<lines.length;i++){
         const line=clean(lines[i]);
-        if(meta.test(line) || nonItemRe.test(line)) continue;
+        if(meta.test(line) || meta.test(compact(line)) || nonItemRe.test(line) || nonItemRe.test(compact(line))) continue;
         const amt=amountAtEnd(line);
         if(amt===null) continue;
         if(isCodeLine(line)){
@@ -1342,7 +1344,7 @@
         const jpSkip=/(合計|総額|小計|消費税|税率|税込|税抜|内税|外税|免税|非課税|お預|お釣|支払|残高|還元|対象額|レジ|責No|電話|住所|日時|領収証|キャッシュレス)/i;
         for(let i=0;i<lines.length;i++){
           const line=clean(lines[i]);
-          if(jpSkip.test(line)) continue;
+          if(jpSkip.test(line) || jpSkip.test(compact(line))) continue;
           const ym=line.match(/^(.*?)(?:\s+|¥|￥)(\d{1,6})\s*(?:円|軽|※)?\s*$/i);
           if(ym && looksName(ym[1])) { addCandidate(ym[1],Number(ym[2])); continue; }
           // 價格獨立一行時，回找上一個可用的日文品名。
@@ -1376,7 +1378,7 @@
 
       // 6.7 防呆：永遠排除收據尾端/統計欄，不讓「折價券數量 1」「找零 0」混入品項。
       for(let i=candidates.length-1;i>=0;i--){
-        if(nonItemRe.test(candidates[i].name) || /^(找零|折價券數量|商品數|小計|合計)$/i.test(candidates[i].name.trim())) candidates.splice(i,1);
+        if(nonItemRe.test(candidates[i].name) || nonItemRe.test(compact(candidates[i].name)) || /^(找零|折價券數量|商品數|小計|合計)$/i.test(compact(candidates[i].name))) candidates.splice(i,1);
       }
       // 若 OCR 仍多抓一筆，且移除該筆後剛好等於收據總額，視為統計欄誤抓並移除。
       if(totalGuess && candidates.length>1){
@@ -1386,10 +1388,10 @@
           if(bad>=0) candidates.splice(bad,1);
         }
       }
-      // 6.9：總額／付款列永遠不能成為商品；若某候選金額等於明確總額且名稱像統計列，直接排除。
+      // 6.10：總額／付款／稅額／回饋列永遠不能成為商品，並忽略 OCR 在關鍵字中插入的空白。
       for(let i=candidates.length-1;i>=0;i--){
         const n=candidates[i].name;
-        if(/(合計|総額|小計|お会計|支払|現計|TOTAL|消費税|内消費税|税額|お預|お釣|残高|還元|対象額)/i.test(n)) candidates.splice(i,1);
+        if(/(合計|総額|小計|お会計|支払|現計|TOTAL|消費税|内消費税|税額|お預|お釣|残高|還元|対象額)/i.test(n) || /(合計|総額|小計|お会計|支払|現計|TOTAL|消費税|内消費税|税額|お預|お釣|残高|還元|対象額)/i.test(compact(n))) candidates.splice(i,1);
       }
 
       // 日本稅務／退稅只依收據實際文字判定，不因看到稅率就自行假設已退稅。
@@ -1413,6 +1415,11 @@
       if(!candidates.length) addReceiptLine();
       candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||''):x.name, x.amount, x.confidence, region));
       const itemSum=candidates.reduce((a,x)=>a+x.amount,0);
+      // 6.10 金額交叉驗證：若 OCR 的總額漏掉千位（如 3,275 -> 275），而品項加總可信，優先提示/修正為品項加總。
+      if(totalGuess && itemSum>0 && candidates.length>=2 && Math.abs(itemSum-totalGuess)>1){
+        const missingThousands = itemSum>999 && totalGuess<1000 && (itemSum%1000===totalGuess || Math.abs((itemSum%1000)-totalGuess)<=1);
+        if(missingThousands) totalGuess=itemSum;
+      }
       if(!totalGuess && candidates.length>=2 && itemSum>0) totalGuess=itemSum;
       document.getElementById('receipt-total').value=totalGuess||'';
       updateReceiptTotals();
@@ -1442,7 +1449,19 @@
         if(t) cnInput.value=t;
         else { const online=await translateJpToCnOnline(jpInput.value); if(online && document.activeElement!==cnInput) cnInput.value=online; }
       });
-      if(region==='jp' && jp && !cn){ translateJpToCnOnline(jp).then(t=>{ if(t && !cnInput.value) cnInput.value=t; }); }
+      if(region==='jp' && jp && !cn){
+        translateJpToCnOnline(jp).then(t=>{
+          if(t && !cnInput.value) cnInput.value=t;
+          if(!cnInput.value){
+            row.classList.add('ocr-low-confidence');
+            if(!row.querySelector('.translation-warning')){
+              const w=document.createElement('div'); w.className='receipt-row-warning translation-warning';
+              w.textContent='⚠️ 此日文品名尚未能可靠翻譯，請對照收據手動補中文；也可以直接保留日文或按 × 刪除。';
+              row.appendChild(w);
+            }
+          }
+        });
+      }
       amtInput.addEventListener('input', updateReceiptTotals);
       row.querySelector('.receipt-remove').onclick=()=>{ row.remove(); updateReceiptTotals(); };
       if(region==='tw'){ cnInput.style.display='none'; cnInput.value=jpInput.value; }
