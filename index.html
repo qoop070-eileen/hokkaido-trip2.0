@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>北海道 6 日遊 Travel Planner 6.2</title>
+  <title>北海道 6 日遊 Travel Planner 6.3</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -1083,21 +1083,55 @@
       const map={'loading tesseract core':'載入 OCR 核心','initializing tesseract':'初始化 OCR','loading language traineddata':'載入台／日語言模型','initializing api':'初始化語言模型','recognizing text':'辨識收據文字'};
       document.getElementById('ocr-progress-text').textContent=map[m.status]||m.status||'OCR 處理中';
     }
+    async function makeOCRVariant(dataUrl, mode='contrast'){
+      const img=new Image(); img.src=dataUrl; await img.decode();
+      const c=document.createElement('canvas'),ctx=c.getContext('2d',{willReadFrequently:true});
+      let sx=0,sy=0,sw=img.naturalWidth,sh=img.naturalHeight;
+      if(mode==='bottom'){ sy=Math.floor(sh*.48); sh=Math.max(1,sh-sy); }
+      c.width=sw; c.height=sh; ctx.drawImage(img,sx,sy,sw,sh,0,0,sw,sh);
+      const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;
+      for(let i=0;i<d.length;i+=4){
+        const g=d[i];
+        // 熱感紙常有灰底與淡字：拉高局部可讀性，但不做過度二值化。
+        let v=(g-150)*1.75+150;
+        if(mode==='binary') v=v<188?0:255;
+        v=Math.max(0,Math.min(255,v)); d[i]=d[i+1]=d[i+2]=v;
+      }
+      ctx.putImageData(im,0,0); return c.toDataURL('image/png');
+    }
+
     async function runReceiptOCR(){
       if(!currentReceiptImage){ alert('請先拍攝或選擇收據照片。'); return; }
       const status=document.getElementById('receipt-status'),wrap=document.getElementById('ocr-progress-wrap'); wrap.style.display='block';
       const selected=document.getElementById('receipt-region')?.value || 'auto';
-      status.innerHTML='🔎 正在辨識收據。台灣收據建議先選「🇹🇼 台灣收據」，日本收據選「🇯🇵 日本收據」，可減少不同語言互相干擾。';
+      status.innerHTML='🔎 正在做多段 OCR：完整收據＋高對比＋總額區。請稍候，這會比舊版多花一些時間。';
       try{
         const worker=await getOCRWorker(selected);
-        const ret=await worker.recognize(currentReceiptImage,{}, {text:true});
-        const text=(ret.data&&ret.data.text)||'';
+        const texts=[];
+        // Pass 1：完整收據，保留版面。
+        try{ await worker.setParameters({tessedit_pageseg_mode:'4',preserve_interword_spaces:'1'}); }catch(e){}
+        let ret=await worker.recognize(currentReceiptImage,{}, {text:true});
+        if(ret?.data?.text) texts.push(ret.data.text);
+        // Pass 2：高對比整張，救回淡色熱感紙中文字。
+        const contrast=await makeOCRVariant(currentReceiptImage,'contrast');
+        try{ await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'}); }catch(e){}
+        ret=await worker.recognize(contrast,{}, {text:true});
+        if(ret?.data?.text) texts.push(ret.data.text);
+        // Pass 3：收據下半部，專門強化「合計／總計／付款」區。
+        const bottom=await makeOCRVariant(currentReceiptImage,'bottom');
+        ret=await worker.recognize(bottom,{}, {text:true});
+        if(ret?.data?.text) texts.push(ret.data.text);
+        const text=texts.filter(Boolean).join('\n--- OCR PASS ---\n');
         const raw=document.getElementById('ocr-raw-text'); if(raw) raw.value=text;
         if(!text.trim()) throw new Error('沒有辨識到可用文字，請讓收據填滿畫面、平整、避免陰影後重拍。');
         const region=selected==='auto'?detectReceiptRegion(text):selected;
         document.getElementById('receipt-region').value=region;
-        fillReceiptFromText(text,region);
-        status.innerHTML='✅ OCR 完成：'+(region==='tw'?'🇹🇼 台灣模式':region==='jp'?'🇯🇵 日本模式':'自動模式')+'。請核對品項與總額；OCR 不會在未確認前直接入帳。';
+        const parsed=fillReceiptFromText(text,region);
+        if(parsed?.reliable){
+          status.innerHTML='✅ OCR 完成：'+(region==='tw'?'🇹🇼 台灣模式':'🇯🇵 日本模式')+'。已用多段辨識交叉抓取品項與總額，請最後核對一次再入帳。';
+        }else{
+          status.innerHTML='⚠️ OCR 已完成，但這張收據的辨識信心不足。系統沒有硬猜金額；請依上方照片核對或使用「手動輸入」。';
+        }
       }catch(err){
         console.error(err); status.innerHTML='⚠️ OCR 無法完成：'+escapeHtml(err.message||String(err))+'<br>照片仍保留，可改用手動輸入。';
       }finally{ setTimeout(()=>{wrap.style.display='none'},700); }
@@ -1121,57 +1155,63 @@
     }
 
     function fillReceiptFromText(text, forcedRegion) {
-      if(!text) return;
+      if(!text) return {reliable:false};
       const region=forcedRegion||detectReceiptRegion(text);
       const lines=text.split(/\n+/).map(x=>x.replace(/[|]/g,' ').replace(/\s+/g,' ').trim()).filter(Boolean);
+      const moneyNums=line=>(line.replace(/[,，]/g,'').match(/(?<!\d)\d{1,6}(?!\d)/g)||[]).map(Number).filter(n=>n>=0&&n<200000);
 
-      // 先找真正的總計列；不再用「整張收據最大的數字」當總額，
-      // 避免把日期、電話、店號（例如 196026）誤判成金額。
-      let totalGuess=0;
-      const totalWords=region==='tw' ? /(?:^|\s)(總\s*計|合\s*計|應付|實付|發票金額)(?:\s|[:：])/i : /(合計|総額|お会計|TOTAL)/i;
+      // 總額：只接受有明確關鍵字的同一列；多次 OCR 若得到相同值，優先採用。
+      const totalHits=[];
+      const totalWords=region==='tw' ? /(總\s*計|合\s*計|應\s*付|實\s*付|發票金額|信用卡\s*[:：]?)/i : /(合計|総額|お会計|TOTAL|クレジット)/i;
       for(const line of lines){
-        if(totalWords.test(line)){
-          const nums=(line.replace(/,/g,'').match(/\d{1,6}/g)||[]).map(Number).filter(n=>n>0 && n<200000);
-          if(nums.length) totalGuess=nums[nums.length-1];
-        }
+        if(!totalWords.test(line)) continue;
+        const nums=moneyNums(line).filter(n=>n>0);
+        if(nums.length) totalHits.push(nums[nums.length-1]);
       }
+      const freq={}; totalHits.forEach(n=>freq[n]=(freq[n]||0)+1);
+      let totalGuess=Number(Object.keys(freq).sort((a,b)=>freq[b]-freq[a]||Number(b)-Number(a))[0]||0);
 
       const skip=region==='tw'
-        ? /(交易明細|統一發票|電子發票|發票|電話|TEL|地址|餐廳|店號|序號|日期|時間|卡號|MCard|交易ID|點數|載具|統編|發票金額|總計|合計|小計|應付|實付|找零|稅額|共\s*\d+\s*項|本次|累計|LINE|APP|QRCode|QR)/i
-        : /(電話|TEL|住所|日時|レシート|領収|担当|会員|カード|合計|小計|総額|お会計|消費税|税率|お預|お釣|ポイント|点数)/i;
+        ? /(交易明細|統一發票|電子發票|發票號碼|電話|TEL|地址|店號|序號|日期|時間|卡號|交易ID|點數|載具|統編|總計|合計|小計|應付|實付|找零|稅額|信用卡|共\s*\d+\s*項|本次|累計|QRCode|QR|--- OCR PASS ---)/i
+        : /(電話|TEL|住所|日時|レシート|領収|担当|会員|カード|合計|小計|総額|お会計|消費税|税率|お預|お釣|ポイント|点数|--- OCR PASS ---)/i;
 
-      const candidates=[];
-      for(const line of lines){
-        if(skip.test(line)) continue;
-        let clean=line.replace(/[,，]/g,' ').replace(/[￥¥]/g,' ').trim();
-
-        // 台灣 POS 常見：品名  單價  數量  金額  TX/TP
-        // 取「最後一個合理金額」，而不是第一個數字。
-        const nums=[...clean.matchAll(/(?:^|\s)(\d{1,5})(?=\s|$|T[XP]|TX|TP)/gi)];
-        if(!nums.length) continue;
-        const amount=Number(nums[nums.length-1][1]);
+      const candidates=[], seen=new Set();
+      for(const line0 of lines){
+        if(skip.test(line0)) continue;
+        const line=line0.replace(/[￥¥]/g,' ').replace(/[,，]/g,' ').trim();
+        // 排除條碼／商品碼主導的行。
+        if(/^\s*\d{7,14}\s*$/.test(line)) continue;
+        const matches=[...line.matchAll(/(?<!\d)(\d{1,5})(?:\s*(?:TX|TP|T\*|円|元))?(?!\d)/gi)];
+        if(!matches.length) continue;
+        const m=matches[matches.length-1], amount=Number(m[1]);
         if(!amount || amount>50000) continue;
-
-        let cut=nums[0].index;
-        let name=clean.slice(0,cut).replace(/^[=\-:：\s]+/,'').trim();
-        name=name.replace(/\s+[0-9]+\s*$/,'').trim();
+        let name=line.slice(0,m.index).replace(/^[=\-:：\s]+/,'').replace(/\s+\d+\s*$/,'').trim();
+        // 若名稱尾端仍是 7~14 位商品碼，移除它；若整行只剩碼則丟棄。
+        name=name.replace(/\s*\d{7,14}\s*$/,'').trim();
         if(!name || name.length<2 || /^\d+$/.test(name)) continue;
-        if(/[A-Za-z]*\d{5,}/.test(name)) continue;
-        if(totalGuess && amount===totalGuess && candidates.length) continue;
-
+        const key=name.replace(/\s/g,'')+'|'+amount;
+        if(seen.has(key)) continue; seen.add(key);
         candidates.push({name,amount});
-        if(candidates.length>=18) break;
+        if(candidates.length>=20) break;
       }
 
-      // 若同一列 OCR 沒抓到，但台灣收據總額存在，保留總額而不亂造品項。
+      // 找商店摘要：從前段挑第一個像店名而非代碼/地址的文字。
+      const merchant=lines.slice(0,18).find(x=>x.length>=3 && x.length<=36 && !/^(NET|NO[:：]|TEL|\d+$)/i.test(x) && !/(地址|電話|TEL|發票|機\d|序\d|員\d)/i.test(x));
+      if(merchant){
+        if(region==='tw') document.getElementById('receipt-merchant-cn').value=merchant;
+        else { document.getElementById('receipt-merchant-jp').value=merchant; document.getElementById('receipt-merchant-cn').value=translateJpToCn(merchant)||''; }
+      }
+
       const editor=document.getElementById('receipt-items-editor'); editor.innerHTML='';
       if(!candidates.length) addReceiptLine();
       candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||''):x.name, x.amount));
-
       const itemSum=candidates.reduce((a,x)=>a+x.amount,0);
-      if(!totalGuess && itemSum>0) totalGuess=itemSum;
-      if(totalGuess) document.getElementById('receipt-total').value=totalGuess;
+      // 只有在沒有明確總額、且至少兩個品項時才以品項和暫代，避免舊版那種單一錯字「8」直接變總額。
+      if(!totalGuess && candidates.length>=2 && itemSum>0) totalGuess=itemSum;
+      document.getElementById('receipt-total').value=totalGuess||'';
       updateReceiptTotals();
+      const reliable=!!totalGuess && (totalHits.length>0 || candidates.length>=2);
+      return {reliable,total:totalGuess,items:candidates.length};
     }
     function addReceiptLine(jp='', cn='', amount='') {
       const row = document.createElement('div');
@@ -1221,7 +1261,7 @@
     }
 
 
-    // --- Voice input helper 4.3 ---
+    // --- Voice input helper 6.3 ---
     let activeRecognition = null;
     let activeVoiceKind = null;
     let voiceFinalText = '';
@@ -1320,21 +1360,36 @@
       }
       const rec=new SR();
       activeRecognition=rec; activeVoiceKind=kind; voiceFinalText=''; voiceInterimText='';
+      const voiceTrace=[]; const trace=x=>{ voiceTrace.push(x); console.log('[voice]',kind,x); }; trace('created');
       rec.lang='zh-TW';
       // Android Chrome 對 continuous/interim 的行為不穩定；改為一次一句、只取 final result。
-      rec.continuous=false; rec.interimResults=false; rec.maxAlternatives=1;
+      rec.continuous=false; rec.interimResults=true; rec.maxAlternatives=3;
       if('processLocally' in rec) { try{ rec.processLocally=false; }catch(e){} }
       btn.classList.add('listening'); btn.textContent='🔴 聆聽中…';
       setVoiceStatus(kind,'🎙️ 請直接說完整一句，例如「白色戀人 1600 日圓，台灣 450 元」。說完後稍等一下。');
       voiceHardStopTimer=setTimeout(()=>{ try{rec.stop()}catch(e){} },12000);
+      rec.onstart=()=>trace('start');
+      rec.onaudiostart=()=>trace('audiostart');
+      rec.onsoundstart=()=>trace('soundstart');
+      rec.onspeechstart=()=>trace('speechstart');
+      rec.onspeechend=()=>trace('speechend');
+      rec.onsoundend=()=>trace('soundend');
+      rec.onaudioend=()=>trace('audioend');
       rec.onresult=e=>{
-        const result=e.results?.[e.results.length-1];
-        const text=result?.[0]?.transcript?.trim()||'';
-        if(text){ voiceFinalText=text; setVoiceStatus(kind,'🎙️ 聽到：<b>'+escapeHtml(text)+'</b>'); }
+        trace('result');
+        let interim='';
+        for(let i=e.resultIndex||0;i<e.results.length;i++){
+          const t=e.results[i]?.[0]?.transcript?.trim()||'';
+          if(!t) continue;
+          if(e.results[i].isFinal) voiceFinalText += (voiceFinalText?' ':'')+t; else interim += (interim?' ':'')+t;
+        }
+        voiceInterimText=interim;
+        const heard=(voiceFinalText||voiceInterimText).trim();
+        if(heard){ setVoiceStatus(kind,'🎙️ 聽到：<b>'+escapeHtml(heard)+'</b>'); }
       };
-      rec.onnomatch=()=>setVoiceStatus(kind,'沒有聽清楚，請再試一次；說話時手機離嘴巴約 20–40 公分。');
+      rec.onnomatch=()=>{ trace('nomatch'); setVoiceStatus(kind,'沒有聽清楚，請再試一次；說話時手機離嘴巴約 20–40 公分。'); };
       rec.onerror=e=>{
-        clearVoiceTimers(); resetVoiceUI(kind); activeRecognition=null;
+        trace('error:'+String(e.error||'unknown')); clearVoiceTimers(); resetVoiceUI(kind); activeRecognition=null;
         const map={
           'no-speech':'沒有偵測到語音。請再按一次後直接說話。',
           'audio-capture':'找不到可用的麥克風。',
@@ -1345,12 +1400,12 @@
         setVoiceStatus(kind,'⚠️ '+(map[e.error]||('語音辨識錯誤：'+escapeHtml(e.error||'unknown'))));
       };
       rec.onend=()=>{
-        clearVoiceTimers(); const text=voiceFinalText.trim(); resetVoiceUI(kind); activeRecognition=null;
+        trace('end'); clearVoiceTimers(); const text=(voiceFinalText||voiceInterimText).trim(); resetVoiceUI(kind); activeRecognition=null;
         if(text){
           setVoiceStatus(kind,'✅ 已辨識：「<b>'+escapeHtml(text)+'</b>」');
           setTimeout(()=>onComplete(text),150);
         } else if(!document.querySelector('#'+ids.result+' .voice-status')?.textContent?.includes('⚠️')) {
-          setVoiceStatus(kind,'沒有取得語音文字。若再次發生，可先用下方鍵盤 🎙️；此狀況可能是 Android Chrome 的 Web Speech 服務限制。');
+          setVoiceStatus(kind,'沒有取得語音文字。診斷：'+escapeHtml(voiceTrace.join(' → '))+'。若看到 audiostart 但沒有 speechstart/result，請先關閉正在使用麥克風的其他 App（例如 ChatGPT 語音）再試。');
         }
       };
       try{ rec.start(); }catch(e){ activeRecognition=null; clearVoiceTimers(); resetVoiceUI(kind); setVoiceStatus(kind,'無法啟動語音辨識：'+escapeHtml(e.name||e.message||String(e))); }
