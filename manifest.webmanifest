@@ -1,35 +1,15 @@
 {
-  "name": "北海道 6 日遊 Travel Planner 6.6",
-  "short_name": "北海道6日遊",
-  "description": "北海道六日行程、購物清單、語音輸入、日幣記帳、台日收據 OCR 與 Checklist",
-  "lang": "zh-Hant",
-  "start_url": "./index.html",
+  "name": "北海道 6 日遊 Travel Planner",
+  "short_name": "北海道6日",
+  "description": "北海道 9/25–9/30 行程、購物、日幣記帳與台／日收據 OCR",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "background_color": "#f5f7fa",
-  "theme_color": "#1976d2",
+  "background_color": "#f4f6f9",
+  "theme_color": "#1565c0",
+  "lang": "zh-TW",
   "icons": [
-    {
-      "src": "./icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "./icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "id": "./",
-  "categories": [
-    "travel",
-    "productivity"
-  ],
-  "display_override": [
-    "standalone",
-    "minimal-ui"
+    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
   ]
 }
