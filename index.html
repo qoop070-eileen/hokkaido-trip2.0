@@ -892,9 +892,9 @@
     // --- Expense Tracker Component ---
     function renderExpenses() {
       const rate = appData.budget.rate;
-      const spentJpy = appData.expenses.reduce((sum, e) => sum + Number(e.jpy || 0), 0);
-      const cashJpy = appData.expenses.filter(e => (e.payment || 'cash') === 'cash').reduce((s,e)=>s+Number(e.jpy||0),0);
-      const cardJpy = appData.expenses.filter(e => e.payment === 'card').reduce((s,e)=>s+Number(e.jpy||0),0);
+      const spentJpy = appData.expenses.filter(e=>e.receiptCurrency!=='TWD').reduce((sum, e) => sum + Number(e.jpy || 0), 0);
+      const cashJpy = appData.expenses.filter(e => e.receiptCurrency!=='TWD' && (e.payment || 'cash') === 'cash').reduce((s,e)=>s+Number(e.jpy||0),0);
+      const cardJpy = appData.expenses.filter(e => e.receiptCurrency!=='TWD' && e.payment === 'card').reduce((s,e)=>s+Number(e.jpy||0),0);
       const remainJpy = appData.budget.totalJpy - cashJpy;
 
       document.getElementById('disp-jpy-remain').innerText = `¥${remainJpy.toLocaleString()}`;
@@ -918,6 +918,7 @@
         const idx = appData.expenses.length - 1 - reverseIdx;
         const pay = exp.payment === 'card' ? '💳 信用卡' : '💵 現金';
         const payClass = exp.payment === 'card' ? 'pay-card' : 'pay-cash';
+        const isTwd=exp.receiptCurrency==='TWD'; const moneySymbol=isTwd?'NT$':'¥'; const twdEquivalent=isTwd?Number(exp.jpy||0):Math.round(Number(exp.jpy||0)*rate);
         const div = document.createElement('div');
         div.className = 'expense-row';
         div.innerHTML = `
@@ -928,7 +929,7 @@
                     <div style="padding:5px 0;border-bottom:1px dashed #ddd;">
                       <div class="jp-line">🇯🇵 ${escapeHtml(it.jp || '')}</div>
                       <div class="cn-line">🇹🇼 ${escapeHtml(it.cn || translateJpToCn(it.jp) || '請補中文品名')}
-                        <span style="float:right;color:#333;font-weight:800;">¥${Number(it.amount||0).toLocaleString()}</span>
+                        <span style="float:right;color:#333;font-weight:800;">${moneySymbol}${Number(it.amount||0).toLocaleString()}</span>
                       </div>
                     </div>`).join('')
                 : `<div class="jp-line">🇯🇵 ${escapeHtml(exp.nameJp || exp.nameCn || '')}</div>
@@ -936,10 +937,10 @@
             </div>
             <span class="pay-badge ${payClass}">${pay}</span>
             ${exp.date ? `<span style="font-size:.72rem;color:#888;margin-left:5px;">${escapeHtml(exp.date)}</span>` : ''}
-            <div style="color:#888;font-size:.75rem;margin-top:4px;">約合 NT$${Math.round(Number(exp.jpy||0) * rate).toLocaleString()}</div>
+            <div style="color:#888;font-size:.75rem;margin-top:4px;">${isTwd?'台灣收據':'約合'} NT$${twdEquivalent.toLocaleString()}</div>
           </div>
           <div style="text-align:right;white-space:nowrap;">
-            <div style="font-weight:bold;color:var(--danger);font-size:1rem;">¥${Number(exp.jpy||0).toLocaleString()}</div>
+            <div style="font-weight:bold;color:var(--danger);font-size:1rem;">${moneySymbol}${Number(exp.jpy||0).toLocaleString()}</div>
             <button class="action-btn-sm" onclick="editExpense(${idx})">✏️</button>
             <button class="action-btn-sm" onclick="deleteExpense(${idx})">刪除</button>
           </div>`;
@@ -1066,7 +1067,7 @@
       return c.toDataURL('image/jpeg',.96);
     }
 
-    // --- OCR 6.6: PP-OCRv5 + background filtering + retail receipt parser ---
+    // --- OCR 6.7: PP-OCRv5 + Taiwan/Japan receipt structure validation ---
     let paddleModule=null, paddleOCR=null, paddleLoadFailed=false;
     let ocrWorker=null, ocrWorkerLang='';
 
@@ -1191,7 +1192,7 @@
     function detectReceiptRegion(text){
       const choice=document.getElementById('receipt-region')?.value;
       if(choice==='tw'||choice==='jp') return choice;
-      if(/(統一發票|電子發票|載具|統編|新台幣|NT\$|全家|全聯|統一超商|萊爾富|發票號碼)/i.test(text)) return 'tw';
+      if(/(統一發票|電子發票|載具|統編|新台幣|NT\$|全家|全聯|統一超商|萊爾富|發票號碼|高雄市|台北市|臺北市|台中市|臺中市|台南市|臺南市|新北市|中華五路|金星會員|商品數小計|折價券數量|聯名卡|COSTCO|好市多)/i.test(text)) return 'tw';
       if(/[ぁ-んァ-ヶ]/.test(text)||/(税込|税抜|お預り|お釣り|レシート|合計)/.test(text)) return 'jp';
       return 'auto';
     }
@@ -1212,7 +1213,7 @@
     }
     function updateReceiptCurrencyUI(region){
       const r=region || document.getElementById('receipt-region')?.value || 'jp';
-      const c=receiptCurrencyInfo(r==='auto'?'jp':r);
+      const c=receiptCurrencyInfo(r==='auto'?'tw':r);
       const lab=document.getElementById('receipt-total-label'); if(lab) lab.textContent='收據總額 '+c.symbol;
       document.querySelectorAll('#receipt-items-editor .line-amount').forEach(x=>x.placeholder=c.symbol+'0');
       updateReceiptTotals();
@@ -1251,12 +1252,13 @@
       const meta=region==='tw'
         ? /(交易明細|統一發票|電子發票|發票號碼|電話|TEL|地址|高雄市|台北市|臺北市|台中市|臺中市|台南市|臺南市|新北市|路\s*\d+\s*號|街\s*\d+\s*號|店\s*#?\d+|店號|機\s*\d+|序\s*\d+|員\s*\d+|日期|時間|卡號|交易ID|會員|點數|載具|統編|NO[:：]|總金額|總計|合計|小計|商品數小計|應付|實付|找零|稅額|信用卡|聯名|共\s*\d+\s*項|\d+\s*項|本次|累計|QRCode|QR|折價券數量|Please scan|Parking|Ticket|--- OCR PASS ---)/i
         : /(電話|TEL|住所|日時|レシート|領収|担当|会員|カード|合計|小計|総額|お会計|消費税|税率|お預|お釣|ポイント|点数|--- OCR PASS ---)/i;
+      const nonItemRe=/(折價券數量|找零|商品數小計|商品小計|總金額|總計|合計|聯名卡|信用卡|現金|付款|應付|實付|稅額|含稅|發票號碼|卡號|會員|金星會員|日期|時間|取車|停車|Parking|Ticket|Please scan|機\s*\d+|序\s*\d+|員\s*\d+)/i;
       const isCodeLine=line=>/^\s*\d{5,14}(?:\s|$)/.test(clean(line));
       const isPureCode=line=>/^\s*\d{5,14}\s*$/.test(clean(line));
       const hasLettersOrCJK=line=>/[A-Za-z\u3400-\u9fff\u3040-\u30ff]/.test(line);
       const looksName=line=>{
         const x=clean(line);
-        if(!x || x.length<2 || x.length>55 || meta.test(x) || isPureCode(x)) return false;
+        if(!x || x.length<2 || x.length>55 || meta.test(x) || nonItemRe.test(x) || isPureCode(x)) return false;
         if(/^NO\b/i.test(x) || /^(?:\d+[\s*×xX-]*)+$/.test(x)) return false;
         return hasLettersOrCJK(x);
       };
@@ -1280,7 +1282,7 @@
 
       for(let i=0;i<lines.length;i++){
         const line=clean(lines[i]);
-        if(meta.test(line)) continue;
+        if(meta.test(line) || nonItemRe.test(line)) continue;
         const amt=amountAtEnd(line);
         if(amt===null) continue;
         if(isCodeLine(line)){
@@ -1310,13 +1312,26 @@
       let merchant='';
       const head=lines.slice(0,18);
       const brand=head.find(x=>brandRe.test(x));
-      merchant=brand || head.find(x=>/(公司|商店|百貨|超商|市場|薬局|ストア|マート|店$)/i.test(x) && !meta.test(x)) || head.find(x=>looksName(x) && !/(市|區|路|街|號)/.test(x)) || '';
-      if(/COSTCO/i.test(merchant)) merchant='COSTCO WHOLESALE';
+      const costcoSignature=/(金星會員|商品數小計|折價券數量|#?873|COSTCO|好市多)/i.test(allRaw) && /(SALE|會員|商品數小計|總金額)/i.test(allRaw);
+      merchant=costcoSignature ? 'COSTCO WHOLESALE 高雄店' : (brand || head.find(x=>/(公司|商店|百貨|超商|市場|薬局|ストア|マート|店$)/i.test(x) && !meta.test(x)) || head.find(x=>looksName(x) && !/(市|區|路|街|號|低水性|耐候性)/.test(x)) || '');
+      if(/^COSTCO/i.test(merchant) && !/高雄店/.test(merchant) && /高雄/.test(allRaw)) merchant='COSTCO WHOLESALE 高雄店';
       if(merchant){
         if(region==='tw') { document.getElementById('receipt-merchant-jp').value=merchant; document.getElementById('receipt-merchant-cn').value=/COSTCO/i.test(merchant)?'Costco 好市多':merchant; }
         else { document.getElementById('receipt-merchant-jp').value=merchant; document.getElementById('receipt-merchant-cn').value=translateJpToCn(merchant)||''; }
       }
 
+      // 6.7 防呆：永遠排除收據尾端/統計欄，不讓「折價券數量 1」「找零 0」混入品項。
+      for(let i=candidates.length-1;i>=0;i--){
+        if(nonItemRe.test(candidates[i].name) || /^(找零|折價券數量|商品數|小計|合計)$/i.test(candidates[i].name.trim())) candidates.splice(i,1);
+      }
+      // 若 OCR 仍多抓一筆，且移除該筆後剛好等於收據總額，視為統計欄誤抓並移除。
+      if(totalGuess && candidates.length>1){
+        let s0=candidates.reduce((a,x)=>a+x.amount,0);
+        if(Math.abs(s0-totalGuess)>1){
+          const bad=candidates.findIndex(x=>Math.abs((s0-x.amount)-totalGuess)<=1 && (/數量|找零|小計|合計|總額|會員|卡|券/.test(x.name) || Math.abs(x.amount)<=5));
+          if(bad>=0) candidates.splice(bad,1);
+        }
+      }
       const editor=document.getElementById('receipt-items-editor'); editor.innerHTML='';
       if(!candidates.length) addReceiptLine();
       candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||''):x.name, x.amount));
@@ -1370,7 +1385,7 @@
       const jpSummary = pairs.map(x=>x.jp).filter(Boolean).join('、') || merchantJp || '收據消費';
       const cnSummary = pairs.map(x=>x.cn || translateJpToCn(x.jp) || x.jp).filter(Boolean).join('、') || merchantCn || '收據消費';
       appData.expenses.push({
-        id:Date.now().toString(), nameJp:jpSummary, nameCn:cnSummary, jpy:total,
+        id:Date.now().toString(), nameJp:jpSummary, nameCn:cnSummary, jpy:total, amount:total,
         payment:document.getElementById('receipt-payment').value,
         date:new Date().toISOString().slice(0,10),
         receiptImage:currentReceiptImage,
