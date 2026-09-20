@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>北海道 6 日遊 Travel Planner 6.4</title>
+  <title>北海道 6 日遊 Travel Planner 6.5</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -1066,7 +1066,7 @@
       return c.toDataURL('image/jpeg',.96);
     }
 
-    // --- OCR 6.4: PP-OCRv5 first, Tesseract fallback ---
+    // --- OCR 6.5: PP-OCRv5 + receipt-aware parser ---
     let paddleModule=null, paddleOCR=null, paddleLoadFailed=false;
     let ocrWorker=null, ocrWorkerLang='';
 
@@ -1179,7 +1179,7 @@
         if(!text.trim()) throw new Error('沒有辨識到可用文字，請讓收據填滿畫面、平整、避免反光與陰影後重拍。');
         const region=selected==='auto'?detectReceiptRegion(text):selected;
         if(region==='tw'||region==='jp') document.getElementById('receipt-region').value=region;
-        const parsed=fillReceiptFromText(text,region);
+        const parsed=fillReceiptFromText(text,region,out.items||[]);
         const scoreNote=out.avgScore ? '，平均辨識信心 '+Math.round(out.avgScore*100)+'%' : '';
         const fb=fallbackReason ? '<br><span style="font-size:.72rem;color:#777">PP-OCRv5 未啟動原因：'+escapeHtml(fallbackReason)+'</span>' : '';
         if(parsed?.reliable) status.innerHTML='✅ '+out.engine+' 完成'+scoreNote+'。已抓取品項與總額，請核對後再入帳。'+fb;
@@ -1206,13 +1206,14 @@
       return new Promise(resolve => { const r=new FileReader(); r.onload=()=>resolve(r.result); r.readAsDataURL(file); });
     }
 
-    function fillReceiptFromText(text, forcedRegion) {
+    function fillReceiptFromText(text, forcedRegion, ocrItems=[]) {
       if(!text) return {reliable:false};
       const region=forcedRegion||detectReceiptRegion(text);
       const lines=text.split(/\n+/).map(x=>x.replace(/[|]/g,' ').replace(/\s+/g,' ').trim()).filter(Boolean);
-      const moneyNums=line=>(line.replace(/[,，]/g,'').match(/(?<!\d)\d{1,6}(?!\d)/g)||[]).map(Number).filter(n=>n>=0&&n<200000);
+      const clean=s=>String(s||'').replace(/[，,]/g,'').replace(/\s+/g,' ').trim();
+      const moneyNums=line=>(clean(line).match(/(?<!\d)\d{1,6}(?!\d)/g)||[]).map(Number).filter(n=>n>=0&&n<200000);
 
-      // 總額：只接受有明確關鍵字的同一列；多次 OCR 若得到相同值，優先採用。
+      // 6.5：先找真正的總額。像地址「112號」、機號、序號、商品碼都不可當金額。
       const totalHits=[];
       const totalWords=region==='tw' ? /(總\s*計|合\s*計|應\s*付|實\s*付|發票金額|信用卡\s*[:：]?)/i : /(合計|総額|お会計|TOTAL|クレジット)/i;
       for(const line of lines){
@@ -1223,34 +1224,67 @@
       const freq={}; totalHits.forEach(n=>freq[n]=(freq[n]||0)+1);
       let totalGuess=Number(Object.keys(freq).sort((a,b)=>freq[b]-freq[a]||Number(b)-Number(a))[0]||0);
 
-      const skip=region==='tw'
-        ? /(交易明細|統一發票|電子發票|發票號碼|電話|TEL|地址|店號|序號|日期|時間|卡號|交易ID|點數|載具|統編|總計|合計|小計|應付|實付|找零|稅額|信用卡|共\s*\d+\s*項|本次|累計|QRCode|QR|--- OCR PASS ---)/i
+      // 付款方式：台灣收據常把「信用卡 2576」印在總額下方。
+      const allText=lines.join('\n');
+      const payment=/信用卡|VISA|MASTER|JCB|刷卡|クレジット|CARD/i.test(allText) ? 'card' :
+                    (/現金|CASH|お預|お釣/i.test(allText) ? 'cash' : 'cash');
+      const payEl=document.getElementById('receipt-payment'); if(payEl) payEl.value=payment;
+
+      // 不能成為商品的行政/交易資訊。
+      const meta=region==='tw'
+        ? /(交易明細|統一發票|電子發票|發票號碼|電話|TEL|地址|路\s*\d+\s*號|街\s*\d+\s*號|店號|機\s*\d+|序\s*\d+|員\s*\d+|日期|時間|卡號|交易ID|點數|載具|統編|NO[:：]|總計|合計|小計|應付|實付|找零|稅額|信用卡|共\s*\d+\s*項|\d+\s*項|本次|累計|QRCode|QR|--- OCR PASS ---)/i
         : /(電話|TEL|住所|日時|レシート|領収|担当|会員|カード|合計|小計|総額|お会計|消費税|税率|お預|お釣|ポイント|点数|--- OCR PASS ---)/i;
+      const isCodeLine=line=>/^\s*\d{7,14}(?:\s|$)/.test(clean(line));
+      const isPureCode=line=>/^\s*\d{7,14}\s*$/.test(clean(line));
+      const hasLettersOrCJK=line=>/[A-Za-z\u3400-\u9fff\u3040-\u30ff]/.test(line);
+      const looksName=line=>{
+        const x=clean(line);
+        if(!x || x.length<2 || x.length>45 || meta.test(x) || isPureCode(x)) return false;
+        if(/^NET$/i.test(x) || /^NO\b/i.test(x)) return false;
+        if(/^(?:\d+[\s*×xX-]*)+$/.test(x)) return false;
+        return hasLettersOrCJK(x);
+      };
+      const amountAtEnd=line=>{
+        const x=clean(line);
+        // 最右欄價格常見 799TX / 359TX / 0TX / ¥1400 / 1400円。
+        let m=x.match(/(?:^|\s)(\d{1,6})\s*(?:TX|TP|T\*|円|元)?\s*$/i);
+        if(!m) return null;
+        const n=Number(m[1]); return n<=50000?n:null;
+      };
 
       const candidates=[], seen=new Set();
-      for(const line0 of lines){
-        if(skip.test(line0)) continue;
-        const line=line0.replace(/[￥¥]/g,' ').replace(/[,，]/g,' ').trim();
-        // 排除條碼／商品碼主導的行。
-        if(/^\s*\d{7,14}\s*$/.test(line)) continue;
-        const matches=[...line.matchAll(/(?<!\d)(\d{1,5})(?:\s*(?:TX|TP|T\*|円|元))?(?!\d)/gi)];
-        if(!matches.length) continue;
-        const m=matches[matches.length-1], amount=Number(m[1]);
-        if(!amount || amount>50000) continue;
-        let name=line.slice(0,m.index).replace(/^[=\-:：\s]+/,'').replace(/\s+\d+\s*$/,'').trim();
-        // 若名稱尾端仍是 7~14 位商品碼，移除它；若整行只剩碼則丟棄。
-        name=name.replace(/\s*\d{7,14}\s*$/,'').trim();
-        if(!name || name.length<2 || /^\d+$/.test(name)) continue;
+      const addCandidate=(name,amount)=>{
+        name=clean(name).replace(/^[=\-:：\s]+/,'').replace(/\s*\d{7,14}\s*$/,'').trim();
+        if(!looksName(name) || amount===null || amount<0 || amount>50000) return;
         const key=name.replace(/\s/g,'')+'|'+amount;
-        if(seen.has(key)) continue; seen.add(key);
-        candidates.push({name,amount});
-        if(candidates.length>=20) break;
+        if(seen.has(key)) return; seen.add(key); candidates.push({name,amount});
+      };
+
+      // 核心規則：服飾/超商收據常是「品名」一行，下一行「商品碼 + 價格」。
+      // 因此看到商品碼行時，價格取最右欄，品名往上一行找，而不是把商品碼當品名。
+      for(let i=0;i<lines.length;i++){
+        const line=clean(lines[i]);
+        if(meta.test(line)) continue;
+        const amt=amountAtEnd(line);
+        if(amt===null) continue;
+        if(isCodeLine(line)){
+          let name='';
+          for(let j=i-1;j>=Math.max(0,i-2);j--){ if(looksName(lines[j])){ name=lines[j]; break; } }
+          if(name) addCandidate(name,amt);
+          continue;
+        }
+        // 同一行「品名 799TX」的格式仍支援，但地址/機號等已先排除。
+        const m=line.match(/(?:^|\s)(\d{1,6})\s*(?:TX|TP|T\*|円|元)?\s*$/i);
+        if(m){ const name=line.slice(0,m.index).trim(); addCandidate(name,amt); }
       }
 
-      // 找商店摘要：從前段挑第一個像店名而非代碼/地址的文字。
-      const merchant=lines.slice(0,18).find(x=>x.length>=3 && x.length<=36 && !/^(NET|NO[:：]|TEL|\d+$)/i.test(x) && !/(地址|電話|TEL|發票|機\d|序\d|員\d)/i.test(x));
+      // 商店：前段挑公司/商店名稱，明確排除地址、電話、機序員號。
+      let merchant='';
+      const head=lines.slice(0,18);
+      merchant=head.find(x=>/(公司|商店|百貨|超商|市場|薬局|ストア|マート|店$)/i.test(x) && !meta.test(x)) ||
+               head.find(x=>looksName(x) && !/(高雄|台北|台中|台南|市|區|路|街|號)/.test(x)) || '';
       if(merchant){
-        if(region==='tw') document.getElementById('receipt-merchant-cn').value=merchant;
+        if(region==='tw') { document.getElementById('receipt-merchant-jp').value=merchant; document.getElementById('receipt-merchant-cn').value=merchant; }
         else { document.getElementById('receipt-merchant-jp').value=merchant; document.getElementById('receipt-merchant-cn').value=translateJpToCn(merchant)||''; }
       }
 
@@ -1258,12 +1292,14 @@
       if(!candidates.length) addReceiptLine();
       candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||''):x.name, x.amount));
       const itemSum=candidates.reduce((a,x)=>a+x.amount,0);
-      // 只有在沒有明確總額、且至少兩個品項時才以品項和暫代，避免舊版那種單一錯字「8」直接變總額。
       if(!totalGuess && candidates.length>=2 && itemSum>0) totalGuess=itemSum;
       document.getElementById('receipt-total').value=totalGuess||'';
       updateReceiptTotals();
-      const reliable=!!totalGuess && (totalHits.length>0 || candidates.length>=2);
-      return {reliable,total:totalGuess,items:candidates.length};
+
+      // 若有明確總額，且品項加總吻合，信心最高。0 元袋子/折扣列也可保留，不影響總額。
+      const sumMatches=!!totalGuess && Math.abs(itemSum-totalGuess)<=1;
+      const reliable=!!totalGuess && (sumMatches || totalHits.length>0) && candidates.length>=1;
+      return {reliable,total:totalGuess,items:candidates.length,itemSum,payment,sumMatches};
     }
     function addReceiptLine(jp='', cn='', amount='') {
       const row = document.createElement('div');
