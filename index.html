@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>北海道 6 日遊 Travel Planner 6.5</title>
+  <title>北海道 6 日遊 Travel Planner 6.6</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -445,7 +445,7 @@
         <div style="height:7px;background:#e7edf2;border-radius:99px;overflow:hidden;margin-top:5px;"><div id="ocr-progress-bar" style="height:100%;width:0;background:#1976d2;"></div></div>
       </div>
       <div class="feature-row" style="margin:5px 0;">
-        <select id="receipt-region" class="input-control" style="max-width:180px;padding:7px;font-size:.8rem;">
+        <select id="receipt-region" class="input-control" style="max-width:180px;padding:7px;font-size:.8rem;" onchange="updateReceiptCurrencyUI()">
           <option value="auto">🌏 自動判斷台灣／日本</option><option value="tw">🇹🇼 台灣收據</option><option value="jp">🇯🇵 日本收據</option>
         </select>
         <button class="btn feature-btn" type="button" onclick="runReceiptOCR()">🔎 重新 OCR</button>
@@ -470,12 +470,12 @@
         <div id="receipt-items-editor"></div>
         <button class="btn btn-outline mt-10" type="button" onclick="addReceiptLine()">＋ 增加品項</button>
         <div class="receipt-total-box">
-          <span>品項加總</span><span id="receipt-lines-sum">¥0</span>
+          <span>品項加總</span><span id="receipt-lines-sum">NT$0</span>
         </div>
         <div class="receipt-calc-note">每個品項可自行修改。若收據有折扣、稅金、袋子費等造成「品項加總」與「收據總額」不同，請以收據總額為最後記帳金額。</div>
       </div>
       <div class="input-group mt-10">
-        <label>收據總額 ¥</label>
+        <label id="receipt-total-label">收據總額 NT$</label>
         <input id="receipt-total" type="number" class="input-control" placeholder="0" oninput="updateReceiptTotals()">
       </div>
       <div class="input-group">
@@ -892,9 +892,9 @@
     // --- Expense Tracker Component ---
     function renderExpenses() {
       const rate = appData.budget.rate;
-      const spentJpy = appData.expenses.reduce((sum, e) => sum + Number(e.jpy || 0), 0);
-      const cashJpy = appData.expenses.filter(e => (e.payment || 'cash') === 'cash').reduce((s,e)=>s+Number(e.jpy||0),0);
-      const cardJpy = appData.expenses.filter(e => e.payment === 'card').reduce((s,e)=>s+Number(e.jpy||0),0);
+      const spentJpy = appData.expenses.filter(e=>(e.currency||'JPY')==='JPY').reduce((sum, e) => sum + Number(e.jpy || e.amount || 0), 0);
+      const cashJpy = appData.expenses.filter(e => (e.currency||'JPY')==='JPY' && (e.payment || 'cash') === 'cash').reduce((s,e)=>s+Number(e.jpy||e.amount||0),0);
+      const cardJpy = appData.expenses.filter(e => (e.currency||'JPY')==='JPY' && e.payment === 'card').reduce((s,e)=>s+Number(e.jpy||e.amount||0),0);
       const remainJpy = appData.budget.totalJpy - cashJpy;
 
       document.getElementById('disp-jpy-remain').innerText = `¥${remainJpy.toLocaleString()}`;
@@ -918,6 +918,9 @@
         const idx = appData.expenses.length - 1 - reverseIdx;
         const pay = exp.payment === 'card' ? '💳 信用卡' : '💵 現金';
         const payClass = exp.payment === 'card' ? 'pay-card' : 'pay-cash';
+        const expCurrency=exp.currency||'JPY';
+        const expAmount=expCurrency==='TWD'?Number(exp.twd||exp.amount||0):Number(exp.jpy||exp.amount||0);
+        const expSymbol=expCurrency==='TWD'?'NT$':'¥';
         const div = document.createElement('div');
         div.className = 'expense-row';
         div.innerHTML = `
@@ -928,7 +931,7 @@
                     <div style="padding:5px 0;border-bottom:1px dashed #ddd;">
                       <div class="jp-line">🇯🇵 ${escapeHtml(it.jp || '')}</div>
                       <div class="cn-line">🇹🇼 ${escapeHtml(it.cn || translateJpToCn(it.jp) || '請補中文品名')}
-                        <span style="float:right;color:#333;font-weight:800;">¥${Number(it.amount||0).toLocaleString()}</span>
+                        <span style="float:right;color:#333;font-weight:800;">${expSymbol}${Number(it.amount||0).toLocaleString()}</span>
                       </div>
                     </div>`).join('')
                 : `<div class="jp-line">🇯🇵 ${escapeHtml(exp.nameJp || exp.nameCn || '')}</div>
@@ -936,10 +939,10 @@
             </div>
             <span class="pay-badge ${payClass}">${pay}</span>
             ${exp.date ? `<span style="font-size:.72rem;color:#888;margin-left:5px;">${escapeHtml(exp.date)}</span>` : ''}
-            <div style="color:#888;font-size:.75rem;margin-top:4px;">約合 NT$${Math.round(Number(exp.jpy||0) * rate).toLocaleString()}</div>
+            <div style="color:#888;font-size:.75rem;margin-top:4px;">${expCurrency==='JPY'?'約合 NT$'+Math.round(expAmount*rate).toLocaleString():'台幣收據'}</div>
           </div>
           <div style="text-align:right;white-space:nowrap;">
-            <div style="font-weight:bold;color:var(--danger);font-size:1rem;">¥${Number(exp.jpy||0).toLocaleString()}</div>
+            <div style="font-weight:bold;color:var(--danger);font-size:1rem;">${expSymbol}${expAmount.toLocaleString()}</div>
             <button class="action-btn-sm" onclick="editExpense(${idx})">✏️</button>
             <button class="action-btn-sm" onclick="deleteExpense(${idx})">刪除</button>
           </div>`;
@@ -1032,11 +1035,13 @@
         document.getElementById('receipt-items-editor').innerHTML='';
         addReceiptLine();
         document.getElementById('modal-receipt').classList.add('active');
+        updateReceiptCurrencyUI();
         document.getElementById('receipt-status').innerHTML='📷 照片已載入，準備辨識台灣／日本收據…';
         await runReceiptOCR();
       }catch(err){
         console.error(err);
         document.getElementById('modal-receipt').classList.add('active');
+        updateReceiptCurrencyUI();
         document.getElementById('receipt-status').innerHTML='⚠️ 照片已載入，但 OCR 沒有完成：'+escapeHtml(err.message||String(err))+'。您仍可直接對照照片手動輸入。';
       }finally{ e.target.value=''; }
     }
@@ -1066,7 +1071,7 @@
       return c.toDataURL('image/jpeg',.96);
     }
 
-    // --- OCR 6.5: PP-OCRv5 + receipt-aware parser ---
+    // --- OCR 6.6: PP-OCRv5 + receipt-aware parser ---
     let paddleModule=null, paddleOCR=null, paddleLoadFailed=false;
     let ocrWorker=null, ocrWorkerLang='';
 
@@ -1179,6 +1184,7 @@
         if(!text.trim()) throw new Error('沒有辨識到可用文字，請讓收據填滿畫面、平整、避免反光與陰影後重拍。');
         const region=selected==='auto'?detectReceiptRegion(text):selected;
         if(region==='tw'||region==='jp') document.getElementById('receipt-region').value=region;
+        updateReceiptCurrencyUI(region);
         const parsed=fillReceiptFromText(text,region,out.items||[]);
         const scoreNote=out.avgScore ? '，平均辨識信心 '+Math.round(out.avgScore*100)+'%' : '';
         const fb=fallbackReason ? '<br><span style="font-size:.72rem;color:#777">PP-OCRv5 未啟動原因：'+escapeHtml(fallbackReason)+'</span>' : '';
@@ -1301,12 +1307,23 @@
       const reliable=!!totalGuess && (sumMatches || totalHits.length>0) && candidates.length>=1;
       return {reliable,total:totalGuess,items:candidates.length,itemSum,payment,sumMatches};
     }
+    function getReceiptCurrency(region){
+      const r=region || document.getElementById('receipt-region')?.value || 'auto';
+      return r==='jp' ? {code:'JPY',symbol:'¥'} : {code:'TWD',symbol:'NT$'};
+    }
+    function updateReceiptCurrencyUI(region){
+      const c=getReceiptCurrency(region);
+      const label=document.getElementById('receipt-total-label'); if(label) label.textContent='收據總額 '+c.symbol;
+      document.querySelectorAll('#receipt-items-editor .line-amount').forEach(x=>x.placeholder=c.symbol+'0');
+      updateReceiptTotals();
+    }
+
     function addReceiptLine(jp='', cn='', amount='') {
       const row = document.createElement('div');
       row.className = 'receipt-item-row';
       row.innerHTML = `<input class="input-control receipt-jp" placeholder="收據原文品項" value="${escapeHtml(jp)}">
                        <input class="input-control receipt-cn" placeholder="中文對照" value="${escapeHtml(cn)}">
-                       <input type="number" class="input-control line-amount" placeholder="¥0" value="${amount || ''}">
+                       <input type="number" class="input-control line-amount" placeholder="${getReceiptCurrency().symbol}0" value="${amount || ''}">
                        <button type="button" class="receipt-remove" title="刪除此品項">✕</button>`;
       const jpInput = row.querySelector('.receipt-jp');
       const cnInput = row.querySelector('.receipt-cn');
@@ -1322,7 +1339,7 @@
       const sum=[...document.querySelectorAll('#receipt-items-editor .line-amount')]
         .reduce((a,x)=>a+(parseFloat(x.value)||0),0);
       const el=document.getElementById('receipt-lines-sum');
-      if(el) el.textContent='¥'+sum.toLocaleString();
+      if(el) el.textContent=getReceiptCurrency().symbol+sum.toLocaleString();
     }
 
     function saveReceiptExpense() {
@@ -1338,12 +1355,15 @@
       if(!total) { alert('請先確認並輸入收據總額。'); return; }
       const jpSummary = pairs.map(x=>x.jp).filter(Boolean).join('、') || merchantJp || '收據消費';
       const cnSummary = pairs.map(x=>x.cn || translateJpToCn(x.jp) || x.jp).filter(Boolean).join('、') || merchantCn || '收據消費';
+      const receiptRegion=document.getElementById('receipt-region')?.value==='jp' ? 'jp' : 'tw';
+      const currency=receiptRegion==='jp' ? 'JPY' : 'TWD';
       appData.expenses.push({
-        id:Date.now().toString(), nameJp:jpSummary, nameCn:cnSummary, jpy:total,
+        id:Date.now().toString(), nameJp:jpSummary, nameCn:cnSummary,
+        jpy:currency==='JPY'?total:0, twd:currency==='TWD'?total:0, amount:total, currency,
         payment:document.getElementById('receipt-payment').value,
         date:new Date().toISOString().slice(0,10),
         receiptImage:currentReceiptImage,
-        receiptItems:pairs
+        receiptItems:pairs.map(x=>({...x,currency}))
       });
       saveData(); closeModal('modal-receipt'); renderExpenses();
     }
