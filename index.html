@@ -472,7 +472,11 @@
         <div class="receipt-total-box">
           <span>品項加總</span><span id="receipt-lines-sum">¥0</span>
         </div>
-        <div class="receipt-calc-note">每個品項可自行修改。若收據有折扣、稅金、袋子費等造成「品項加總」與「收據總額」不同，請以收據總額為最後記帳金額。</div>
+        <div class="receipt-calc-note">每個品項可自行修改。若收據有折扣、稅金、袋子費、回饋或退稅造成「品項加總」與「收據總額」不同，請以收據實際最終付款／收據總額為最後記帳金額。</div>
+      </div>
+      <div id="receipt-tax-box" class="fallback-box" style="display:none;margin-top:10px;">
+        <b>🇯🇵 日本稅金／退稅辨識</b>
+        <div id="receipt-tax-status" style="margin-top:5px;line-height:1.55;"></div>
       </div>
       <div class="input-group mt-10">
         <label id="receipt-total-label">收據總額 ¥</label>
@@ -578,8 +582,8 @@
       '薬':'藥品','医薬品':'藥品','化粧品':'化妝品','化粧水':'化妝水','乳液':'乳液','洗顔':'洗面用品',
       '日焼け止め':'防曬','シャンプー':'洗髮精','トリートメント':'護髮','マスク':'口罩／面膜',
       'ティッシュ':'面紙','歯ブラシ':'牙刷','歯磨き粉':'牙膏','洗剤':'清潔劑',
-      '袋':'袋子','レジ袋':'購物袋','お土産':'伴手禮','免税':'免稅',
-      'セイコーマート':'Seicomart 便利商店','ローソン':'Lawson 便利商店','ファミリーマート':'FamilyMart 便利商店',
+      '袋':'袋子','レジ袋':'購物袋','お土産':'伴手禮','免税':'免稅','免税対象':'免稅對象','免税額':'免稅金額','非課税':'非課稅','税込':'含稅','税抜':'未稅','消費税':'消費稅','軽減税率':'優惠稅率','軽':'優惠稅率商品','キャッシュレス還元':'無現金支付回饋','還元':'回饋','オールドファッション':'Old Fashion 原味甜甜圈','たっぷりクリームデニッシュ':'奶油丹麥麵包','メロンパン':'哈密瓜麵包',
+      'セイコーマート':'Seicomart 便利商店','ローソン':'Lawson 便利商店','ファミリーマート':'FamilyMart／全家便利商店','FamilyMart':'FamilyMart／全家便利商店',
       'セブンイレブン':'7-ELEVEN 便利商店','ドラッグストア':'藥妝店',
       '發票':'發票','電子發票':'電子發票','統一發票':'統一發票','交易明細':'交易明細',
       '全家':'FamilyMart 全家','統一超商':'7-ELEVEN 統一超商','萊爾富':'Hi-Life 萊爾富',
@@ -1067,7 +1071,7 @@
       return c.toDataURL('image/jpeg',.96);
     }
 
-    // --- OCR 6.7: PP-OCRv5 + Taiwan/Japan receipt structure validation ---
+    // --- OCR 6.8: Taiwan/Japan receipt + tax-free + bilingual parser ---
     let paddleModule=null, paddleOCR=null, paddleLoadFailed=false;
     let ocrWorker=null, ocrWorkerLang='';
 
@@ -1236,7 +1240,7 @@
 
       const moneyNums=line=>(clean(line).match(/(?<!\d)-?\d{1,6}(?!\d)/g)||[]).map(Number).filter(n=>Math.abs(n)<200000);
       const totalHits=[];
-      const totalWords=region==='tw' ? /(總\s*金額|總\s*計|合\s*計|應\s*付|實\s*付|發票金額|聯名\s*[:：]?|信用卡\s*[:：]?)/i : /(合計|総額|お会計|TOTAL|クレジット)/i;
+      const totalWords=region==='tw' ? /(總\s*金額|總\s*計|合\s*計|應\s*付|實\s*付|發票金額|聯名\s*[:：]?|信用卡\s*[:：]?)/i : /(合計|総額|お会計|TOTAL|お支払|支払額|現計|クレジット|交通系マネー支払)/i;
       for(const line of lines){
         if(!totalWords.test(line)) continue;
         const nums=moneyNums(line).filter(n=>n>0);
@@ -1246,12 +1250,12 @@
       let totalGuess=Number(Object.keys(freq).sort((a,b)=>freq[b]-freq[a]||Number(b)-Number(a))[0]||0);
 
       const allText=lines.join('\n');
-      const payment=/信用卡|VISA|MASTER|JCB|刷卡|クレジット|CARD/i.test(allText) ? 'card' : 'cash';
+      const payment=/信用卡|VISA|MASTER|JCB|刷卡|クレジット|CARD|交通系マネー|電子マネー|PayPay|Suica|PASMO/i.test(allText) ? 'card' : 'cash';
       const payEl=document.getElementById('receipt-payment'); if(payEl) payEl.value=payment;
 
       const meta=region==='tw'
         ? /(交易明細|統一發票|電子發票|發票號碼|電話|TEL|地址|高雄市|台北市|臺北市|台中市|臺中市|台南市|臺南市|新北市|路\s*\d+\s*號|街\s*\d+\s*號|店\s*#?\d+|店號|機\s*\d+|序\s*\d+|員\s*\d+|日期|時間|卡號|交易ID|會員|點數|載具|統編|NO[:：]|總金額|總計|合計|小計|商品數小計|應付|實付|找零|稅額|信用卡|聯名|共\s*\d+\s*項|\d+\s*項|本次|累計|QRCode|QR|折價券數量|Please scan|Parking|Ticket|--- OCR PASS ---)/i
-        : /(電話|TEL|住所|日時|レシート|領収|担当|会員|カード|合計|小計|総額|お会計|消費税|税率|お預|お釣|ポイント|点数|--- OCR PASS ---)/i;
+        : /(電話|TEL|住所|日時|レシート|領収|担当|会員|カード|合計|小計|総額|お会計|消費税|税率|税込|税抜|内消費税|免税|非課税|お預|お釣|ポイント|点数|残高|支払|還元|対象額|--- OCR PASS ---)/i;
       const nonItemRe=/(折價券數量|找零|商品數小計|商品小計|總金額|總計|合計|聯名卡|信用卡|現金|付款|應付|實付|稅額|含稅|發票號碼|卡號|會員|金星會員|日期|時間|取車|停車|Parking|Ticket|Please scan|機\s*\d+|序\s*\d+|員\s*\d+)/i;
       const isCodeLine=line=>/^\s*\d{5,14}(?:\s|$)/.test(clean(line));
       const isPureCode=line=>/^\s*\d{5,14}\s*$/.test(clean(line));
@@ -1265,7 +1269,7 @@
       const amountAtEnd=line=>{
         const x=clean(line);
         // 支援 Costco 的 100-T（折扣）、NET 的 799TX、日本 1400円。
-        let m=x.match(/(?:^|\s)(\d{1,6})\s*(-?T|TX|TP|T\*|円|元)?\s*$/i);
+        let m=x.match(/(?:^|\s|¥|￥)(\d{1,6})\s*(-?T|TX|TP|T\*|円|元|軽|※)?\s*$/i);
         if(!m) return null;
         let n=Number(m[1]);
         if(/-T$/i.test(x)) n=-n;
@@ -1295,8 +1299,24 @@
           if(name) addCandidate(name,amt);
           continue;
         }
-        const m=line.match(/(?:^|\s)(\d{1,6})\s*(?:-?T|TX|TP|T\*|円|元)?\s*$/i);
+        const m=line.match(/(?:^|\s|¥|￥)(\d{1,6})\s*(?:-?T|TX|TP|T\*|円|元|軽|※)?\s*$/i);
         if(m){ const name=line.slice(0,m.index).trim(); addCandidate(name,amt); }
+      }
+
+      // 6.8 日本收據：常見格式為「品名  ¥118軽」，也可能品名與價格分行。
+      if(region==='jp'){
+        const jpSkip=/(合計|総額|小計|消費税|税率|税込|税抜|内税|外税|免税|非課税|お預|お釣|支払|残高|還元|対象額|レジ|責No|電話|住所|日時|領収証|キャッシュレス)/i;
+        for(let i=0;i<lines.length;i++){
+          const line=clean(lines[i]);
+          if(jpSkip.test(line)) continue;
+          const ym=line.match(/^(.*?)(?:\s+|¥|￥)(\d{1,6})\s*(?:円|軽|※)?\s*$/i);
+          if(ym && looksName(ym[1])) { addCandidate(ym[1],Number(ym[2])); continue; }
+          // 價格獨立一行時，回找上一個可用的日文品名。
+          const only=line.match(/^[¥￥]?\s*(\d{1,6})\s*(?:円|軽|※)?$/);
+          if(only && i>0){
+            for(let j=i-1;j>=Math.max(0,i-2);j--){ const nm=clean(lines[j]); if(looksName(nm)&&!jpSkip.test(nm)){addCandidate(nm,Number(only[1]));break;} }
+          }
+        }
       }
 
       // PP-OCRv5 若把「品名」和「價格」拆成不同文字框，利用垂直位置再配一次。
@@ -1332,6 +1352,23 @@
           if(bad>=0) candidates.splice(bad,1);
         }
       }
+      // 日本稅務／退稅只依收據實際文字判定，不因看到稅率就自行假設已退稅。
+      const taxBox=document.getElementById('receipt-tax-box'), taxStatus=document.getElementById('receipt-tax-status');
+      if(taxBox && taxStatus){
+        if(region==='jp'){
+          taxBox.style.display='block';
+          const hasTaxFree=/(免税|TAX\s*FREE|免税対象|免税額|消費税免税)/i.test(allRaw);
+          const hasTax=/消費税|税込|税抜|内消費税|税率|8\s*%|10\s*%|軽減税率/i.test(allRaw);
+          const taxAmounts=[];
+          lines.forEach(l=>{ if(/消費税|免税額|税額/i.test(l)){ const ns=moneyNums(l).filter(n=>n>=0); if(ns.length) taxAmounts.push(ns[ns.length-1]); }});
+          const rates=[]; for(const m of allRaw.matchAll(/(?:税率|対象|軽減)?\s*(8|10)\s*%/g)) if(!rates.includes(m[1])) rates.push(m[1]);
+          let st=hasTaxFree?'✅ 收據偵測到「免稅／Tax Free」相關文字；請以收據列出的最終付款金額為準。':(hasTax?'ℹ️ 收據有日本消費稅資訊，但目前沒有足夠文字證明已完成免稅／退稅。':'⚠️ 未辨識到明確稅金／免稅文字，請依收據確認。');
+          if(rates.length) st+='<br>辨識稅率：'+rates.map(x=>x+'%').join('、');
+          if(taxAmounts.length) st+='<br>辨識到的稅／免稅相關金額：¥'+taxAmounts.join('、¥');
+          taxStatus.innerHTML=st;
+        } else { taxBox.style.display='none'; taxStatus.textContent=''; }
+      }
+
       const editor=document.getElementById('receipt-items-editor'); editor.innerHTML='';
       if(!candidates.length) addReceiptLine();
       candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||''):x.name, x.amount));
