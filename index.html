@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>北海道 6 日遊 Travel Planner 6.10</title>
+  <title>【測試版 7.0】北海道 6 日遊 Travel Planner 6.10</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -169,7 +169,21 @@
     .receipt-source button{width:auto!important}
 
     .card-title{gap:8px;flex-wrap:wrap}.card-title>.flex-gap{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.card-title .voice-btn{margin:0!important}.card-title .feature-hint{flex-basis:100%;margin:0!important}.action-btn-sm{min-height:34px}.voice-btn.feature-btn{min-height:34px!important;padding:5px 9px!important;font-size:.78rem!important}.ocr-ok{color:#1b7f3a}.ocr-warn{color:#9a6700}.ocr-bad{color:#b42318}
-</style>
+
+    /* --- 7.0 通用旅行版 --- */
+    .warn-badge{display:inline-flex;align-items:center;gap:4px;background:#fff4e5;border:1px solid #ffb74d;color:#8a4b00;border-radius:999px;padding:3px 8px;font-size:.72rem;font-weight:700;margin:4px 0}
+    .receipt-item-row.ocr-low-confidence{border-left:4px solid #f59e0b;padding-left:7px;background:#fffaf0}
+    .receipt-row-warning{grid-column:1/-1;background:#fff4e5;border:1px solid #ffd08a;border-radius:7px;padding:7px 9px;color:#8a4b00;font-size:.76rem;line-height:1.45}
+    .trip-toolbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+    .trip-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+    .spot-actions,.record-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+    .spot-records{margin:8px 0 0 14px;padding-left:10px;border-left:2px solid #dbeafe}
+    .spot-record{display:flex;gap:6px;align-items:flex-start;padding:5px 0;font-size:.82rem}
+    .spot-record span{flex:1}
+    .mini-btn{border:1px solid var(--border);background:#fff;border-radius:7px;padding:4px 7px;font-size:.72rem;cursor:pointer}
+    .voice-btn.listening::before{content:'●';margin-right:5px}
+
+  </style>
 
   <meta name="theme-color" content="#1976d2">
   <meta name="mobile-web-app-capable" content="yes">
@@ -181,6 +195,9 @@
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
 </head>
 <body>
+  <div style="position:sticky;top:0;z-index:9999;background:#fff3cd;border-bottom:1px solid #e6b800;padding:7px 10px;text-align:center;font-size:.78rem;font-weight:700;color:#6b5200">
+    🧪 7.0 測試版｜請先測：慢速語音、Checklist 語音、可編輯行程、FamilyMart 收據 OCR
+  </div>
 
   <!-- Header -->
   <header>
@@ -202,20 +219,22 @@
       </div>
     </div>
 
-    <!-- 2. 6 天每日行程 Page -->
+    <!-- 2. 通用每日行程 Page -->
     <div id="page-itinerary" class="page">
-      <div class="day-tabs">
-        <button class="day-tab-btn active" onclick="switchDay(1)">D1 (9/25五)</button>
-        <button class="day-tab-btn" onclick="switchDay(2)">D2 (9/26六)</button>
-        <button class="day-tab-btn" onclick="switchDay(3)">D3 (9/27日)</button>
-        <button class="day-tab-btn" onclick="switchDay(4)">D4 (9/28一)</button>
-        <button class="day-tab-btn" onclick="switchDay(5)">D5 (9/29二)</button>
-        <button class="day-tab-btn" onclick="switchDay(6)">D6 (9/30三)</button>
+      <div class="card">
+        <div class="card-title"><span>🗓️ 旅行行程</span></div>
+        <div class="trip-meta">
+          <input id="trip-title" class="input-control" placeholder="旅行名稱" onchange="updateTripMeta()">
+          <input id="trip-start-date" type="date" class="input-control" onchange="updateTripMeta()">
+        </div>
+        <div class="trip-toolbar">
+          <button class="action-btn-sm" onclick="addTripDay()">＋ 新增一天</button>
+          <button class="action-btn-sm" onclick="editCurrentDay()">✏️ 編輯目前日期</button>
+          <button class="action-btn-sm" onclick="deleteCurrentDay()">🗑️ 刪除目前日期</button>
+        </div>
+        <div id="dynamic-day-tabs" class="day-tabs"></div>
       </div>
-
-      <div id="itinerary-day-content" class="card">
-        <!-- Dynamic Content per Day -->
-      </div>
+      <div id="itinerary-day-content" class="card"></div>
     </div>
 
     <!-- 3. 購物清單 & 比價 Page -->
@@ -528,50 +547,51 @@
       expenses: [
         { id: 'e1', nameCn: '新千歲機場拉麵', nameJp: '新千歳空港 ラーメン', jpy: 1200, payment: 'cash', date: '' }
       ],
+      trip: { title: '北海道 6 日遊', startDate: '2026-09-25' },
       itinerary: {
         1: { date: '9/25 (五)', spots: [
-            { name: '高雄小港國際機場', desc: '集合時間 08:05 SL392 起飛 11:05' },
-            { name: '新千歲機場', desc: '預計 16:15 抵達北海道' },
-            { name: '登別溫泉街', desc: '入住登別溫泉體驗鬼怪街道' },
-            { name: '閻王秀', desc: '參觀登別極樂通閻魔堂變臉秀' },
-            { name: '登別万世閣', desc: '住宿飯店 (TEL: 0570-08-3500)' }
+            { name: '高雄小港國際機場', desc: '集合時間 08:05 SL392 起飛 11:05', records: [] },
+            { name: '新千歲機場', desc: '預計 16:15 抵達北海道', records: [] },
+            { name: '登別溫泉街', desc: '入住登別溫泉體驗鬼怪街道', records: [] },
+            { name: '閻王秀', desc: '參觀登別極樂通閻魔堂變臉秀', records: [] },
+            { name: '登別万世閣', desc: '住宿飯店 (TEL: 0570-08-3500)', records: [] }
           ]},
         2: { date: '9/26 (六)', spots: [
-            { name: '尼克斯海洋公園', desc: '北歐城堡主題水族館、企鵝遊行' },
-            { name: '金森倉庫群', desc: '函館港灣紅磚復古建築購物街' },
-            { name: '函館山纜車', desc: '搭乘纜車欣賞世界級美麗函館夜景' },
-            { name: '函館湯の川温泉海と灯', desc: '住宿飯店 (TEL: 0138-57-5390)' }
+            { name: '尼克斯海洋公園', desc: '北歐城堡主題水族館、企鵝遊行', records: [] },
+            { name: '金森倉庫群', desc: '函館港灣紅磚復古建築購物街', records: [] },
+            { name: '函館山纜車', desc: '搭乘纜車欣賞世界級美麗函館夜景', records: [] },
+            { name: '函館湯の川温泉海と灯', desc: '住宿飯店 (TEL: 0138-57-5390)', records: [] }
           ]},
         3: { date: '9/27 (日)', spots: [
-            { name: '函館朝市', desc: '品嚐新鮮海鮮丼、烏賊刺身' },
-            { name: '五稜郭塔', desc: '俯瞰星形城郭獨特景色' },
-            { name: '大沼國立公園', desc: '欣賞湖光山色自然美景' },
-            { name: '昭和新山熊牧場', desc: '近距離觀察可愛北海道棕熊' },
-            { name: '洞爺 SUNPALACE', desc: '住宿飯店 (TEL: 0142-75-1111)' }
+            { name: '函館朝市', desc: '品嚐新鮮海鮮丼、烏賊刺身', records: [] },
+            { name: '五稜郭塔', desc: '俯瞰星形城郭獨特景色', records: [] },
+            { name: '大沼國立公園', desc: '欣賞湖光山色自然美景', records: [] },
+            { name: '昭和新山熊牧場', desc: '近距離觀察可愛北海道棕熊', records: [] },
+            { name: '洞爺 SUNPALACE', desc: '住宿飯店 (TEL: 0142-75-1111)', records: [] }
           ]},
         4: { date: '9/28 (一)', spots: [
-            { name: 'SAIRO 展望台', desc: '飽覽洞爺湖 180 度湖光山色絕景' },
-            { name: '羊蹄山名水公園', desc: '日本百選名水，品嚐純淨甘甜湧泉' },
-            { name: '小樽運河', desc: '浪漫紅磚倉庫與煤油路燈散策' },
-            { name: '北一硝子館', desc: '精緻玻璃工藝老字號門市' },
-            { name: '小樽音樂盒堂本館', desc: '日本最大音樂盒專賣店' },
-            { name: '銀之鐘咖啡館', desc: '贈送咖啡與泡芙，可帶走精美咖啡杯' },
-            { name: '定山溪 VIEW', desc: '住宿飯店 (TEL: 011-598-3339)' }
+            { name: 'SAIRO 展望台', desc: '飽覽洞爺湖 180 度湖光山色絕景', records: [] },
+            { name: '羊蹄山名水公園', desc: '日本百選名水，品嚐純淨甘甜湧泉', records: [] },
+            { name: '小樽運河', desc: '浪漫紅磚倉庫與煤油路燈散策', records: [] },
+            { name: '北一硝子館', desc: '精緻玻璃工藝老字號門市', records: [] },
+            { name: '小樽音樂盒堂本館', desc: '日本最大音樂盒專賣店', records: [] },
+            { name: '銀之鐘咖啡館', desc: '贈送咖啡與泡芙，可帶走精美咖啡杯', records: [] },
+            { name: '定山溪 VIEW', desc: '住宿飯店 (TEL: 011-598-3339)', records: [] }
           ]},
         5: { date: '9/29 (二)', spots: [
-            { name: '免稅藥妝店', desc: '採購各類日本藥妝伴手禮' },
-            { name: '札幌場外市場', desc: '現撈螃蟹與海鮮饗宴 (午餐: 花魚定食)' },
-            { name: '北海道神宮', desc: '北海道開拓心靈寄託，祈求平安財運' },
-            { name: '圓山動物園', desc: '近距離觀察極地與原生動物' },
-            { name: '狸小路商店街', desc: '百年歷史頂棚商店街，暢快購物' },
-            { name: '札幌 IBIS HOTEL', desc: '住宿飯店 (TEL: 011-530-4055)' }
+            { name: '免稅藥妝店', desc: '採購各類日本藥妝伴手禮', records: [] },
+            { name: '札幌場外市場', desc: '現撈螃蟹與海鮮饗宴 (午餐: 花魚定食)', records: [] },
+            { name: '北海道神宮', desc: '北海道開拓心靈寄託，祈求平安財運', records: [] },
+            { name: '圓山動物園', desc: '近距離觀察極地與原生動物', records: [] },
+            { name: '狸小路商店街', desc: '百年歷史頂棚商店街，暢快購物', records: [] },
+            { name: '札幌 IBIS HOTEL', desc: '住宿飯店 (TEL: 011-530-4055)', records: [] }
           ]},
         6: { date: '9/30 (三)', spots: [
-            { name: '札幌時計台 (途經)', desc: '車窗觀賞札幌地標建築' },
-            { name: '大通公園 (途經)', desc: '貫穿市中心的綠意公園' },
-            { name: '舊道廳 (途經)', desc: '紅磚巴洛克風格歷史建築' },
-            { name: '三井 OUTLET PARK', desc: '全室內暢貨中心，盡情購物 (午餐自理)' },
-            { name: '新千歲機場', desc: '搭乘 SL393 20:45 返抵高雄小港' }
+            { name: '札幌時計台 (途經)', desc: '車窗觀賞札幌地標建築', records: [] },
+            { name: '大通公園 (途經)', desc: '貫穿市中心的綠意公園', records: [] },
+            { name: '舊道廳 (途經)', desc: '紅磚巴洛克風格歷史建築', records: [] },
+            { name: '三井 OUTLET PARK', desc: '全室內暢貨中心，盡情購物 (午餐自理)', records: [] },
+            { name: '新千歲機場', desc: '搭乘 SL393 20:45 返抵高雄小港', records: [] }
           ]}
       }
     };
@@ -588,7 +608,7 @@
       '薬':'藥品','医薬品':'藥品','化粧品':'化妝品','化粧水':'化妝水','乳液':'乳液','洗顔':'洗面用品',
       '日焼け止め':'防曬','シャンプー':'洗髮精','トリートメント':'護髮','マスク':'口罩／面膜',
       'ティッシュ':'面紙','歯ブラシ':'牙刷','歯磨き粉':'牙膏','洗剤':'清潔劑',
-      '袋':'袋子','レジ袋':'購物袋','お土産':'伴手禮','免税':'免稅','免税対象':'免稅對象','免税額':'免稅金額','非課税':'非課稅','税込':'含稅','税抜':'未稅','消費税':'消費稅','軽減税率':'優惠稅率','軽':'優惠稅率商品','キャッシュレス還元':'無現金支付回饋','還元':'回饋','オールドファッション':'Old Fashion 原味甜甜圈','たっぷりクリームデニッシュ':'滿餡奶油丹麥麵包','クリームデニッシュ':'奶油丹麥麵包','メロンパン':'日式甜瓜麵包（Melon Pan）','カレーパン':'咖哩麵包','あんぱん':'紅豆麵包','クリームパン':'奶油麵包','チーズ':'起司','バター':'奶油','ヨーグルト':'優格','プリン':'布丁','ドーナツ':'甜甜圈',
+      '袋':'袋子','レジ袋':'購物袋','お土産':'伴手禮','免税':'免稅','免税対象':'免稅對象','免税額':'免稅金額','非課税':'非課稅','税込':'含稅','税抜':'未稅','消費税':'消費稅','軽減税率':'優惠稅率','軽':'優惠稅率商品','キャッシュレス還元':'無現金支付回饋','還元':'回饋','オールドファッション':'Old Fashion 原味甜甜圈','たっぷりクリームデニッシュ':'滿餡奶油丹麥麵包','クリームデニッシュ':'奶油丹麥麵包','メロンパン':'哈密瓜麵包（Melon Pan）','カレーパン':'咖哩麵包','あんぱん':'紅豆麵包','クリームパン':'奶油麵包','チーズ':'起司','バター':'奶油','ヨーグルト':'優格','プリン':'布丁','ドーナツ':'甜甜圈','デニッシュ':'丹麥麵包','クリームデニ':'奶油丹麥麵包（原文可能截字，請核對）','オールドファッション':'Old Fashion 原味甜甜圈','メロンパン':'哈密瓜麵包（Melon Pan）','菓子パン':'甜麵包','惣菜パン':'鹹味調理麵包','からあげ':'日式炸雞','唐揚げ':'日式炸雞','おでん':'關東煮','肉まん':'肉包','中華まん':'中華包子','コロッケ':'可樂餅','焼きそば':'炒麵','うどん':'烏龍麵','そば':'蕎麥麵',
       'セイコーマート':'Seicomart 便利商店','ローソン':'Lawson 便利商店','ファミリーマート':'FamilyMart／全家便利商店','FamilyMart':'FamilyMart／全家便利商店',
       'セブンイレブン':'7-ELEVEN 便利商店','ドラッグストア':'藥妝店',
       '發票':'發票','電子發票':'電子發票','統一發票':'統一發票','交易明細':'交易明細',
@@ -645,9 +665,10 @@
       document.getElementById(`page-${pageKey}`).classList.add('active');
       if(el) el.classList.add('active');
 
-      if(pageKey === 'pre-check') renderChecklist('pre');
+      if(pageKey === 'pre-check') ensureTripSchema();
+    renderChecklist('pre');
       if(pageKey === 'post-check') renderChecklist('post');
-      if(pageKey === 'itinerary') switchDay(1);
+      if(pageKey === 'itinerary') { ensureTripSchema(); renderDayTabs(); switchDay(currentTripDay||1); }
       if(pageKey === 'shopping') renderShopping();
       if(pageKey === 'expense') renderExpenses();
     }
@@ -657,34 +678,38 @@
       const container = document.getElementById(`${type}-check-container`);
       const categories = type === 'pre' ? appData.preCheck : appData.postCheck;
       container.innerHTML = '';
-
       categories.forEach((cat, cIdx) => {
         const catBox = document.createElement('div');
         catBox.className = 'category-box';
-        
         let itemsHtml = cat.items.map((item, iIdx) => `
           <div class="check-item">
             <input type="checkbox" id="${type}-${cIdx}-${iIdx}">
-            <label for="${type}-${cIdx}-${iIdx}">${item}</label>
+            <label for="${type}-${cIdx}-${iIdx}" ondblclick="editChecklistItem('${type}',${cIdx},${iIdx})">${escapeHtml(item)}</label>
+            <button class="action-btn-sm" onclick="editChecklistItem('${type}',${cIdx},${iIdx})">✏️</button>
             <button class="action-btn-sm" onclick="moveItem('${type}', ${cIdx}, ${iIdx}, -1)">▲</button>
             <button class="action-btn-sm" onclick="moveItem('${type}', ${cIdx}, ${iIdx}, 1)">▼</button>
             <button class="action-btn-sm" onclick="deleteItem('${type}', ${cIdx}, ${iIdx})">✕</button>
-          </div>
-        `).join('');
-
+          </div>`).join('');
         catBox.innerHTML = `
           <div class="category-header">
-            <span>${cat.title}</span>
+            <span>${escapeHtml(cat.title)}</span>
             <div>
               <button class="action-btn-sm" onclick="editCategoryTitle('${type}', ${cIdx})">✏️</button>
               <button class="action-btn-sm" onclick="addItem('${type}', ${cIdx})">+ 項目</button>
+              <button class="action-btn-sm voice-btn" id="voice-${type}-${cIdx}" onclick="toggleChecklistVoice('${type}',${cIdx})">🎙️ 語音新增</button>
               <button class="action-btn-sm" onclick="deleteCategory('${type}', ${cIdx})">🗑️</button>
             </div>
           </div>
-          <div>${itemsHtml || '<p style="font-size:0.8rem; color:#aaa;">暫無項目</p>'}</div>
-        `;
+          <div id="voice-status-${type}-${cIdx}"></div>
+          <div>${itemsHtml || '<p style="font-size:0.8rem; color:#aaa;">暫無項目</p>'}</div>`;
         container.appendChild(catBox);
       });
+    }
+
+    function editChecklistItem(type,cIdx,iIdx){
+      const target=type==='pre'?appData.preCheck:appData.postCheck;
+      const v=prompt('修改項目：',target[cIdx].items[iIdx]);
+      if(v!==null && v.trim()){target[cIdx].items[iIdx]=v.trim();saveData();renderChecklist(type);}
     }
 
     function addCategory(type) {
@@ -745,35 +770,67 @@
       }
     }
 
-    // --- 6 Days Itinerary Component ---
-    function switchDay(dayNum) {
-      document.querySelectorAll('.day-tab-btn').forEach((btn, idx) => {
-        btn.classList.toggle('active', idx + 1 === dayNum);
+    // --- 7.0 通用旅行行程 Component ---
+    let currentTripDay = 1;
+    function ensureTripSchema(){
+      appData.trip = appData.trip || {title:'我的旅行',startDate:''};
+      Object.keys(appData.itinerary||{}).forEach(k=>{
+        const d=appData.itinerary[k]; d.spots=(d.spots||[]).map(x=>({...x,records:x.records||[]}));
       });
-
-      const dayData = appData.itinerary[dayNum];
-      const container = document.getElementById('itinerary-day-content');
-
-      let spotsHtml = dayData.spots.map(spot => {
-        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(spot.name)}`;
-        return `
-          <div class="spot-item">
-            <div class="spot-info">
-              <div class="spot-name">${spot.name}</div>
-              <div class="spot-desc">${spot.desc}</div>
-            </div>
-            <a href="${mapUrl}" target="_blank" class="map-btn">📍 地圖</a>
-          </div>
-        `;
-      }).join('');
-
-      container.innerHTML = `
-        <div class="card-title">
-          <span>Day ${dayNum} 景點與行程 (${dayData.date})</span>
-        </div>
-        <div>${spotsHtml}</div>
-      `;
     }
+    function renderDayTabs(){
+      ensureTripSchema();
+      const keys=Object.keys(appData.itinerary||{}).map(Number).sort((a,b)=>a-b);
+      const tabs=document.getElementById('dynamic-day-tabs'); if(!tabs)return;
+      tabs.innerHTML=keys.map((k,i)=>`<button class="day-tab-btn ${k===currentTripDay?'active':''}" onclick="switchDay(${k})">D${i+1} ${escapeHtml(appData.itinerary[k].date||'')}</button>`).join('');
+      const title=document.getElementById('trip-title'),sd=document.getElementById('trip-start-date');
+      if(title) title.value=appData.trip.title||''; if(sd) sd.value=appData.trip.startDate||'';
+    }
+    function updateTripMeta(){
+      ensureTripSchema();
+      appData.trip.title=document.getElementById('trip-title').value.trim()||'我的旅行';
+      appData.trip.startDate=document.getElementById('trip-start-date').value||'';
+      saveData();
+    }
+    function switchDay(dayNum) {
+      ensureTripSchema(); currentTripDay=Number(dayNum);
+      renderDayTabs();
+      const dayData=appData.itinerary[currentTripDay]; if(!dayData)return;
+      const container=document.getElementById('itinerary-day-content');
+      const spotsHtml=(dayData.spots||[]).map((spot,sIdx)=>{
+        const mapUrl=`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(spot.name)}`;
+        const rec=(spot.records||[]).map((r,rIdx)=>`<div class="spot-record"><span>• ${escapeHtml(r)}</span><button class="mini-btn" onclick="editSpotRecord(${currentTripDay},${sIdx},${rIdx})">✏️</button><button class="mini-btn" onclick="deleteSpotRecord(${currentTripDay},${sIdx},${rIdx})">✕</button></div>`).join('');
+        return `<div class="spot-item">
+          <div class="spot-info">
+            <div class="spot-name">${escapeHtml(spot.name)}</div>
+            <div class="spot-desc">${escapeHtml(spot.desc||'')}</div>
+            <div class="spot-actions">
+              <a href="${mapUrl}" target="_blank" class="map-btn">📍 地圖</a>
+              <button class="mini-btn" onclick="editSpot(${currentTripDay},${sIdx})">✏️ 編輯</button>
+              <button class="mini-btn" onclick="deleteSpot(${currentTripDay},${sIdx})">🗑️</button>
+              <button class="mini-btn" onclick="addSpotRecord(${currentTripDay},${sIdx})">＋紀錄</button>
+              <button class="mini-btn voice-btn" id="voice-spot-${currentTripDay}-${sIdx}" onclick="toggleSpotVoice(${currentTripDay},${sIdx})">🎙️ 語音新增紀錄</button>
+            </div>
+            <div id="voice-status-spot-${currentTripDay}-${sIdx}"></div>
+            <div class="spot-records">${rec||'<span style="font-size:.75rem;color:#999">尚無已造訪／商店紀錄</span>'}</div>
+          </div>
+        </div>`;
+      }).join('');
+      container.innerHTML=`<div class="card-title"><span>Day ${currentTripDay} 景點與行程 (${escapeHtml(dayData.date||'')})</span><button class="action-btn-sm" onclick="addSpot(${currentTripDay})">＋ 新增景點</button></div><div>${spotsHtml||'<p>尚無景點。</p>'}</div>`;
+    }
+    function addTripDay(){
+      ensureTripSchema(); const keys=Object.keys(appData.itinerary).map(Number); const k=keys.length?Math.max(...keys)+1:1;
+      const date=prompt('新增日期／標題（例：10/3 (六)）：',''); if(date===null)return;
+      appData.itinerary[k]={date:date.trim(),spots:[]}; currentTripDay=k; saveData(); switchDay(k);
+    }
+    function editCurrentDay(){ const d=appData.itinerary[currentTripDay]; if(!d)return; const v=prompt('修改這一天的日期／標題：',d.date||''); if(v!==null){d.date=v.trim();saveData();switchDay(currentTripDay);} }
+    function deleteCurrentDay(){ const keys=Object.keys(appData.itinerary).map(Number).sort((a,b)=>a-b); if(keys.length<=1){alert('至少保留一天行程。');return;} if(!confirm('確定刪除目前這一天與其所有景點紀錄？'))return; delete appData.itinerary[currentTripDay]; const obj={}; Object.keys(appData.itinerary).map(Number).sort((a,b)=>a-b).forEach((k,i)=>obj[i+1]=appData.itinerary[k]); appData.itinerary=obj; currentTripDay=1; saveData();switchDay(1);}
+    function addSpot(day){ const name=prompt('景點／商店名稱：'); if(!name)return; const desc=prompt('說明（可留空）：','')||''; appData.itinerary[day].spots.push({name:name.trim(),desc:desc.trim(),records:[]});saveData();switchDay(day);}
+    function editSpot(day,i){const sp=appData.itinerary[day].spots[i];const n=prompt('景點／商店名稱：',sp.name);if(n===null)return;const d=prompt('說明：',sp.desc||'');sp.name=n.trim()||sp.name;sp.desc=d===null?sp.desc:d.trim();saveData();switchDay(day);}
+    function deleteSpot(day,i){if(confirm('刪除此景點與其紀錄？')){appData.itinerary[day].spots.splice(i,1);saveData();switchDay(day);}}
+    function addSpotRecord(day,i,text=''){const v=text||prompt('新增已造訪／購物／備註紀錄：');if(!v)return;appData.itinerary[day].spots[i].records.push(v.trim());saveData();switchDay(day);}
+    function editSpotRecord(day,i,r){const sp=appData.itinerary[day].spots[i],v=prompt('修改紀錄：',sp.records[r]);if(v!==null&&v.trim()){sp.records[r]=v.trim();saveData();switchDay(day);}}
+    function deleteSpotRecord(day,i,r){appData.itinerary[day].spots[i].records.splice(r,1);saveData();switchDay(day);}
 
     // --- Shopping & Price Comparison Component ---
     function renderShopping() {
@@ -1292,7 +1349,7 @@
       const meta=region==='tw'
         ? /(交易明細|統一發票|電子發票|發票號碼|電話|TEL|地址|高雄市|台北市|臺北市|台中市|臺中市|台南市|臺南市|新北市|路\s*\d+\s*號|街\s*\d+\s*號|店\s*#?\d+|店號|機\s*\d+|序\s*\d+|員\s*\d+|日期|時間|卡號|交易ID|會員|點數|載具|統編|NO[:：]|總金額|總計|合計|小計|商品數小計|應付|實付|找零|稅額|信用卡|聯名|共\s*\d+\s*項|\d+\s*項|本次|累計|QRCode|QR|折價券數量|Please scan|Parking|Ticket|--- OCR PASS ---)/i
         : /(電話|TEL|住所|日時|レシート|領収|担当|会員|カード|合計|小計|総額|お会計|消費税|税率|税込|税抜|内消費税|免税|非課税|お預|お釣|ポイント|点数|残高|支払|還元|対象額|--- OCR PASS ---)/i;
-      const nonItemRe=/(折價券數量|找零|商品數小計|商品小計|總金額|總計|合計|聯名卡|信用卡|現金|付款|應付|實付|稅額|含稅|發票號碼|卡號|會員|金星會員|日期|時間|取車|停車|Parking|Ticket|Please scan|機\s*\d+|序\s*\d+|員\s*\d+)/i;
+      const nonItemRe=/(折價券數量|折扣|値引|割引|クーポン|找零|商品數小計|商品小計|總金額|總計|合計|小計|総額|お会計|TOTAL|聯名卡|信用卡|クレジット|現金|付款|支払|お支払|交通系マネー|電子マネー|應付|實付|稅額|消費税|内消費税|税込|税抜|軽減税率|お預|お釣|残高|還元|対象額|發票號碼|卡號|會員|金星會員|日期|時間|日時|領収|レシート|責No|取車|停車|Parking|Ticket|Please scan|機\s*\d+|序\s*\d+|員\s*\d+)/i;
       const isCodeLine=line=>/^\s*\d{5,14}(?:\s|$)/.test(clean(line));
       const isPureCode=line=>/^\s*\d{5,14}\s*$/.test(clean(line));
       const hasLettersOrCJK=line=>/[A-Za-z\u3400-\u9fff\u3040-\u30ff]/.test(line);
@@ -1411,35 +1468,43 @@
         } else { taxBox.style.display='none'; taxStatus.textContent=''; }
       }
 
+      // 7.0：先做逐品項品質檢查，再 render，讓可疑列一定看得到 ⚠️。
+      candidates.forEach(x=>{
+        const reasons=[];
+        const n=normalizeJpReceiptName(x.name);
+        if(x.confidence===null || x.confidence<.82) reasons.push('OCR 辨識信心不足');
+        const tr=region==='jp'?translateJpToCn(n):n;
+        const hasKnownTerm=region!=='jp' || !!jpToCn[n] || Object.keys(jpToCn).some(k=>n.includes(k));
+        if(region==='jp' && (/デニ$|クリームデニ$/.test(n) || (!hasKnownTerm && /^[ァ-ヶー]{2,}$/.test(n)))) reasons.push('品名可能被截斷或辨識不完整');
+        if(region==='jp' && !tr) reasons.push('中文翻譯無法可靠判定');
+        x.warningReasons=[...new Set(reasons)];
+      });
       const editor=document.getElementById('receipt-items-editor'); editor.innerHTML='';
       if(!candidates.length) addReceiptLine();
-      candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||''):x.name, x.amount, x.confidence, region));
+      candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||''):x.name, x.amount, x.confidence, region, x.warningReasons||[]));
       const itemSum=candidates.reduce((a,x)=>a+x.amount,0);
-      // 6.10 金額交叉驗證：若 OCR 的總額漏掉千位（如 3,275 -> 275），而品項加總可信，優先提示/修正為品項加總。
-      if(totalGuess && itemSum>0 && candidates.length>=2 && Math.abs(itemSum-totalGuess)>1){
-        const missingThousands = itemSum>999 && totalGuess<1000 && (itemSum%1000===totalGuess || Math.abs((itemSum%1000)-totalGuess)<=1);
-        if(missingThousands) totalGuess=itemSum;
-      }
-      if(!totalGuess && candidates.length>=2 && itemSum>0) totalGuess=itemSum;
+
+      // 7.0：不再用「品項加總」自動改寫 OCR 收據總額。
+      // 若 OCR 總額與品項加總不同，只顯示警告，讓使用者依實體收據決定。
       document.getElementById('receipt-total').value=totalGuess||'';
       updateReceiptTotals();
       const sumMatches=!!totalGuess && Math.abs(itemSum-totalGuess)<=1;
-      const lowConfidenceCount=candidates.filter(x=>x.confidence!==null && x.confidence<.78).length;
+      const lowConfidenceCount=candidates.filter(x=>x.warningReasons?.length).length;
       const reliable=!!totalGuess && sumMatches && candidates.length>=1 && lowConfidenceCount===0;
-      return {reliable,total:totalGuess,items:candidates.length,itemSum,payment,sumMatches,region};
+      return {reliable,total:totalGuess,items:candidates.length,itemSum,payment,sumMatches,region,warnings:lowConfidenceCount};
     }
-    function addReceiptLine(jp='', cn='', amount='', confidence=null, regionOverride=null) {
+    function addReceiptLine(jp='', cn='', amount='', confidence=null, regionOverride=null, warningReasons=[]) {
       const row = document.createElement('div');
       row.className = 'receipt-item-row';
       const region=regionOverride || document.getElementById('receipt-region')?.value || 'jp';
-      const low=confidence!==null && confidence<.78;
+      const low=(confidence===null || confidence<.82 || warningReasons.length>0);
       if(low) row.classList.add('ocr-low-confidence');
       const c=receiptCurrencyInfo(document.getElementById('receipt-region')?.value==='tw'?'tw':'jp');
       row.innerHTML = `<input class="input-control receipt-jp" placeholder="收據原文品項" value="${escapeHtml(jp)}">
                        <input class="input-control receipt-cn" placeholder="中文對照" value="${escapeHtml(cn)}">
                        <input type="number" class="input-control line-amount" placeholder="${c.symbol}0" value="${amount !== '' ? amount : ''}">
                        <button type="button" class="receipt-remove" title="刪除此品項">✕</button>
-                       ${low?`<div class="receipt-row-warning">⚠️ 此品項 OCR 辨識信心較低（${Math.round(confidence*100)}%），請對照照片確認；可直接修改或按 × 刪除。</div>`:''}`;
+                       ${low?`<div class="receipt-row-warning">⚠️ 請確認：${escapeHtml((warningReasons.length?warningReasons:['OCR／翻譯可信度不足']).join('、'))}${confidence!==null?'（OCR '+Math.round(confidence*100)+'%）':''}。可直接修改或按 × 刪除。</div>`:''}`;
       const jpInput = row.querySelector('.receipt-jp');
       const cnInput = row.querySelector('.receipt-cn');
       const amtInput = row.querySelector('.line-amount');
@@ -1478,7 +1543,7 @@
       const total=parseFloat(document.getElementById('receipt-total')?.value)||0;
       const check=document.getElementById('receipt-sum-check');
       if(check){
-        if(total>0 && Math.abs(sum-total)<=1){ check.className='receipt-verify ok'; check.textContent='✅ 金額驗算一致：品項加總與收據總額相符。'; }
+        if(total>0 && Math.abs(sum-total)<=1){ check.className='receipt-verify ok'; check.textContent='✅ 結構驗證通過：商品列已排除合計／稅額／付款等非商品欄，且品項加總與收據總額相符。'; }
         else if(total>0){ check.className='receipt-verify warn'; check.textContent='⚠️ 品項加總 '+c.symbol+sum.toLocaleString()+' 與收據總額 '+c.symbol+total.toLocaleString()+' 不一致，請檢查標記品項、折扣、稅金或付款列；可直接修改或刪除。'; }
         else { check.className='receipt-verify warn'; check.textContent='⚠️ 尚未取得可靠收據總額，請對照照片確認。'; }
       }
@@ -1513,181 +1578,85 @@
     // --- Voice input helper 6.3 ---
     let activeRecognition = null;
     let activeVoiceKind = null;
-    let voiceFinalText = '';
-    let voiceInterimText = '';
-    let voiceSilenceTimer = null;
-    let voiceHardStopTimer = null;
-
-    function getSpeechRecognition() {
-      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    // --- 7.0 語音：按一下開始、再按一下停止；停頓時自動續聽 ---
+    let voiceFinalText='', voiceInterimText='', voiceManualStop=false, voiceRestartTimer=null, voiceContext=null;
+    function getSpeechRecognition(){return window.SpeechRecognition||window.webkitSpeechRecognition||null;}
+    function setGenericVoiceButton(btn,listening,label){
+      if(!btn)return; btn.classList.toggle('listening',listening);
+      btn.textContent=listening?'🔴 聆聽中…再按一次停止':label;
     }
-
-    function normalizeSpokenNumber(text) {
-      if(!text) return 0;
-      const arabic = text.replace(/,/g,'').match(/\d+(?:\.\d+)?/g);
-      if(arabic && arabic.length) return Number(arabic[arabic.length-1]);
-      const map={'零':0,'〇':0,'一':1,'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
-      function cnNum(x) {
-        let total=0, section=0, number=0;
-        for(const ch of x) {
-          if(ch in map) number=map[ch];
-          else if(ch==='十'){section+=(number||1)*10;number=0}
-          else if(ch==='百'){section+=(number||1)*100;number=0}
-          else if(ch==='千'){section+=(number||1)*1000;number=0}
-          else if(ch==='萬'){total+=(section+number)*10000;section=0;number=0}
-        }
-        return total+section+number;
-      }
-      const m=text.match(/[零〇一二兩三四五六七八九十百千萬]+/g);
-      return m&&m.length?cnNum(m[m.length-1]):0;
+    function splitVoiceItems(text){
+      return String(text||'').split(/(?:\n|、|，|,|；|;|。|\s+然後\s+|\s+還有\s+)/).map(x=>x.trim()).filter(x=>x.length>1);
     }
-
-    function extractAmounts(text) {
-      let jpy=0,twd=0;
-      const jp=text.match(/([零〇一二兩三四五六七八九十百千萬\d,]+)\s*(?:日圓|日元|円|yen)/i);
-      const tw=text.match(/([零〇一二兩三四五六七八九十百千萬\d,]+)\s*(?:台幣|臺幣|台灣元|元)/i);
-      if(jp)jpy=normalizeSpokenNumber(jp[1]);
-      if(tw)twd=normalizeSpokenNumber(tw[1]);
-      return {jpy,twd};
+    function startPersistentVoice(context){
+      if(activeRecognition){ stopPersistentVoice(); return; }
+      const SR=getSpeechRecognition();
+      if(!SR){alert('此瀏覽器未提供網頁語音辨識，可改用鍵盤麥克風輸入。');return;}
+      voiceContext=context; voiceManualStop=false; voiceFinalText=''; voiceInterimText='';
+      launchVoiceCycle();
     }
-
-    function cleanSpokenItem(text) {
-      return (text||'')
-        .replace(/^(?:新增|加入|幫我買|我要買|想買|記帳|幫我記|我買了|買了|現金買|信用卡買|刷卡買)/,'')
-        .replace(/[零〇一二兩三四五六七八九十百千萬\d,]+\s*(?:日圓|日元|円|yen|台幣|臺幣|台灣元|元)/ig,'')
-        .replace(/(?:用)?(?:現金|信用卡|刷卡)(?:付款)?/g,'')
-        .replace(/[，,。]/g,' ').trim();
-    }
-
-    function voiceIds(kind){
-      return kind==='shop'
-        ? {btn:'voice-shop-btn',result:'voice-shop-result',label:'🎙️ 語音新增'}
-        : {btn:'voice-expense-btn',result:'voice-expense-result',label:'🎙️ 語音記帳'};
-    }
-
-    function setVoiceStatus(kind,html){
-      const ids=voiceIds(kind),el=document.getElementById(ids.result);
-      if(el)el.innerHTML='<div class="voice-status">'+html+'</div>';
-    }
-
-    function resetVoiceUI(kind){
-      const ids=voiceIds(kind),btn=document.getElementById(ids.btn);
-      if(btn){btn.classList.remove('listening');btn.textContent=ids.label}
-    }
-
-    function clearVoiceTimers(){
-      clearTimeout(voiceSilenceTimer); clearTimeout(voiceHardStopTimer);
-      voiceSilenceTimer=null; voiceHardStopTimer=null;
-    }
-
-    function stopVoiceRecognition(manual=false){
-      if(!activeRecognition)return;
-      setVoiceStatus(activeVoiceKind, manual ? '⏹️ 已停止錄音，正在整理您剛才說的內容…' : '✅ 偵測到您已說完，正在整理內容…');
-      clearVoiceTimers();
-      try{activeRecognition.stop()}catch(e){}
-    }
-
-    function armSilenceStop(){
-      clearTimeout(voiceSilenceTimer);
-      // 有辨識文字後，1.6 秒沒有新內容就視為說完。
-      voiceSilenceTimer=setTimeout(()=>stopVoiceRecognition(false),1600);
-    }
-
-    function isRealWebOrigin(){
-      return location.protocol==='https:' || (location.protocol==='http:' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname));
-    }
-
-    async function runVoice(kind,onComplete){
-      if(activeRecognition){ try{activeRecognition.abort()}catch(e){} activeRecognition=null; }
-      if(!isRealWebOrigin()){
-        setVoiceStatus(kind,'請從部署後的 HTTPS 網址或已安裝的 PWA 使用語音功能。'); return;
-      }
-      const SR=getSpeechRecognition(),ids=voiceIds(kind),btn=document.getElementById(ids.btn);
-      if(!SR){
-        setVoiceStatus(kind,'此瀏覽器沒有提供網頁語音辨識；請使用下方鍵盤 🎙️ 語音輸入。');
-        const fb=document.getElementById(kind==='shop'?'voice-shop-fallback':'voice-expense-fallback'); if(fb)fb.style.display='block'; return;
-      }
-      const rec=new SR();
-      activeRecognition=rec; activeVoiceKind=kind; voiceFinalText=''; voiceInterimText='';
-      const voiceTrace=[]; const trace=x=>{ voiceTrace.push(x); console.log('[voice]',kind,x); }; trace('created');
-      rec.lang='zh-TW';
-      // Android Chrome 對 continuous/interim 的行為不穩定；改為一次一句、只取 final result。
-      rec.continuous=false; rec.interimResults=true; rec.maxAlternatives=3;
-      if('processLocally' in rec) { try{ rec.processLocally=false; }catch(e){} }
-      btn.classList.add('listening'); btn.textContent='🔴 聆聽中…';
-      setVoiceStatus(kind,'🎙️ 請直接說完整一句，例如「白色戀人 1600 日圓，台灣 450 元」。說完後稍等一下。');
-      voiceHardStopTimer=setTimeout(()=>{ try{rec.stop()}catch(e){} },12000);
-      rec.onstart=()=>trace('start');
-      rec.onaudiostart=()=>trace('audiostart');
-      rec.onsoundstart=()=>trace('soundstart');
-      rec.onspeechstart=()=>trace('speechstart');
-      rec.onspeechend=()=>trace('speechend');
-      rec.onsoundend=()=>trace('soundend');
-      rec.onaudioend=()=>trace('audioend');
+    function launchVoiceCycle(){
+      if(voiceManualStop||!voiceContext)return;
+      const SR=getSpeechRecognition(),rec=new SR(); activeRecognition=rec;
+      rec.lang='zh-TW'; rec.continuous=false; rec.interimResults=true; rec.maxAlternatives=1;
+      const btn=document.getElementById(voiceContext.btnId);
+      setGenericVoiceButton(btn,true,voiceContext.label);
       rec.onresult=e=>{
-        trace('result');
         let interim='';
-        for(let i=e.resultIndex||0;i<e.results.length;i++){
-          const t=e.results[i]?.[0]?.transcript?.trim()||'';
-          if(!t) continue;
-          if(e.results[i].isFinal) voiceFinalText += (voiceFinalText?' ':'')+t; else interim += (interim?' ':'')+t;
+        for(let i=e.resultIndex;i<e.results.length;i++){
+          const t=(e.results[i][0]?.transcript||'').trim();
+          if(e.results[i].isFinal) voiceFinalText+=(voiceFinalText?' ':'')+t; else interim+=(interim?' ':'')+t;
         }
         voiceInterimText=interim;
-        const heard=(voiceFinalText||voiceInterimText).trim();
-        if(heard){ setVoiceStatus(kind,'🎙️ 聽到：<b>'+escapeHtml(heard)+'</b>'); }
+        const st=document.getElementById(voiceContext.statusId);
+        if(st) st.innerHTML='<div class="voice-status">🎧 聆聽中：'+escapeHtml((voiceFinalText+' '+voiceInterimText).trim())+'<br><b>講慢一點沒關係；完成後再按一次停止。</b></div>';
       };
-      rec.onnomatch=()=>{ trace('nomatch'); setVoiceStatus(kind,'沒有聽清楚，請再試一次；說話時手機離嘴巴約 20–40 公分。'); };
       rec.onerror=e=>{
-        trace('error:'+String(e.error||'unknown')); clearVoiceTimers(); resetVoiceUI(kind); activeRecognition=null;
-        const map={
-          'no-speech':'沒有偵測到語音。請再按一次後直接說話。',
-          'audio-capture':'找不到可用的麥克風。',
-          'not-allowed':'網站沒有取得語音／麥克風權限。',
-          'network':'Chrome 語音辨識服務連線失敗，請確認網路後再試。',
-          'language-not-supported':'目前語音服務不支援繁體中文（台灣）。'
-        };
-        setVoiceStatus(kind,'⚠️ '+(map[e.error]||('語音辨識錯誤：'+escapeHtml(e.error||'unknown'))));
+        if(['no-speech','aborted'].includes(e.error)) return;
+        const st=document.getElementById(voiceContext.statusId);
+        if(st) st.innerHTML='<div class="voice-status">⚠️ 語音服務：'+escapeHtml(e.error||'unknown')+'；若仍在聆聽模式會自動重試。</div>';
       };
       rec.onend=()=>{
-        trace('end'); clearVoiceTimers(); const text=(voiceFinalText||voiceInterimText).trim(); resetVoiceUI(kind); activeRecognition=null;
-        if(text){
-          setVoiceStatus(kind,'✅ 已辨識：「<b>'+escapeHtml(text)+'</b>」');
-          setTimeout(()=>onComplete(text),150);
-        } else if(!document.querySelector('#'+ids.result+' .voice-status')?.textContent?.includes('⚠️')) {
-          setVoiceStatus(kind,'沒有取得語音文字。診斷：'+escapeHtml(voiceTrace.join(' → '))+'。若看到 audiostart 但沒有 speechstart/result，請先關閉正在使用麥克風的其他 App（例如 ChatGPT 語音）再試。');
-        }
+        activeRecognition=null;
+        if(!voiceManualStop && voiceContext) voiceRestartTimer=setTimeout(launchVoiceCycle,250);
       };
-      try{ rec.start(); }catch(e){ activeRecognition=null; clearVoiceTimers(); resetVoiceUI(kind); setVoiceStatus(kind,'無法啟動語音辨識：'+escapeHtml(e.name||e.message||String(e))); }
+      try{rec.start();}catch(e){activeRecognition=null;}
     }
-
+    function stopPersistentVoice(){
+      voiceManualStop=true; clearTimeout(voiceRestartTimer);
+      const ctx=voiceContext; if(activeRecognition){try{activeRecognition.stop()}catch(e){} activeRecognition=null;}
+      if(!ctx)return;
+      setGenericVoiceButton(document.getElementById(ctx.btnId),false,ctx.label);
+      const text=(voiceFinalText+' '+voiceInterimText).trim();
+      voiceContext=null;
+      if(text) ctx.onDone(text);
+      else {const st=document.getElementById(ctx.statusId);if(st)st.innerHTML='<div class="voice-status">⚠️ 沒有取得語音內容，請再試一次。</div>';}
+    }
+    function toggleChecklistVoice(type,cIdx){
+      const id=`voice-${type}-${cIdx}`,sid=`voice-status-${type}-${cIdx}`;
+      if(activeRecognition||voiceContext){stopPersistentVoice();return;}
+      startPersistentVoice({btnId:id,statusId:sid,label:'🎙️ 語音新增',onDone:text=>{
+        const target=type==='pre'?appData.preCheck:appData.postCheck, items=splitVoiceItems(text);
+        (items.length?items:[text]).forEach(x=>target[cIdx].items.push(x)); saveData();renderChecklist(type);
+      }});
+    }
+    function toggleSpotVoice(day,sIdx){
+      const id=`voice-spot-${day}-${sIdx}`,sid=`voice-status-spot-${day}-${sIdx}`;
+      if(activeRecognition||voiceContext){stopPersistentVoice();return;}
+      startPersistentVoice({btnId:id,statusId:sid,label:'🎙️ 語音新增紀錄',onDone:text=>addSpotRecord(day,sIdx,text)});
+    }
     function startShoppingVoice(){
-      if(activeRecognition && activeVoiceKind==='shop'){stopVoiceRecognition(true);return}
-      runVoice('shop',text=>{
-        const a=extractAmounts(text),item=cleanSpokenItem(text)||text;
-        openShopModal();
-        document.getElementById('shop-name-cn').value=item;
-        document.getElementById('shop-price-jp').value=a.jpy||'';
-        document.getElementById('shop-price-tw').value=a.twd||'';
-        autoTranslateShopName();
-      });
+      if(activeRecognition||voiceContext){stopPersistentVoice();return;}
+      startPersistentVoice({btnId:'voice-shop-btn',statusId:'voice-shop-result',label:'🎙️ 語音新增',onDone:text=>{
+        const el=document.getElementById('voice-shop-text');if(el)el.value=text;parseShoppingText();
+      }});
     }
-
     function startExpenseVoice(){
-      if(activeRecognition && activeVoiceKind==='expense'){stopVoiceRecognition(true);return}
-      runVoice('expense',text=>{
-        const a=extractAmounts(text);
-        const payment=/(信用卡|刷卡)/.test(text)?'card':'cash';
-        const item=cleanSpokenItem(text)||text;
-        openExpenseModal(null);
-        document.getElementById('exp-name-jp').value=item;
-        const cn=translateJpToCn(item);
-        document.getElementById('exp-name-cn').value=cn||item;
-        document.getElementById('exp-amount-jpy').value=a.jpy||normalizeSpokenNumber(text)||'';
-        document.getElementById('exp-payment').value=payment;
-        document.getElementById('exp-date').value=new Date().toISOString().slice(0,10);
-      });
+      if(activeRecognition||voiceContext){stopPersistentVoice();return;}
+      startPersistentVoice({btnId:'voice-expense-btn',statusId:'voice-expense-result',label:'🎙️ 語音記帳',onDone:text=>{
+        const el=document.getElementById('voice-expense-text');if(el)el.value=text;parseExpenseText();
+      }});
     }
-
 
     function parseShoppingText(){
       const text=document.getElementById('voice-shop-text').value.trim(); if(!text)return;
