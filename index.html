@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>【測試版 7.0】北海道 6 日遊 Travel Planner 6.10</title>
+  <title>【測試版 7.4】北海道 6 日遊 Travel Planner｜智慧收據結構版</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -137,6 +137,10 @@
     .receipt-remove { border:0; background:#fff1f0; color:#b42318; border-radius:7px; width:32px; height:36px; }
     .receipt-item-row.ocr-low-confidence { background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:7px; margin-top:5px; }
     .receipt-row-warning { grid-column:1/-1; font-size:.72rem; color:#9a6700; line-height:1.4; }
+    .receipt-role { grid-column:1/-1; display:flex; align-items:center; gap:6px; font-size:.72rem; color:#667085; }
+    .receipt-role select{width:auto;min-width:112px;padding:5px 7px;font-size:.75rem;}
+    .receipt-item-row.role-discount{background:#fff8f0;border-left:4px solid #f59e0b;padding-left:7px;}
+    .receipt-item-row.role-add{background:#f3fbff;border-left:4px solid #38bdf8;padding-left:7px;}
     .receipt-verify { margin-top:8px; padding:8px 10px; border-radius:8px; font-size:.78rem; line-height:1.45; }
     .receipt-verify.ok { background:#f0fff4; border:1px solid #b7ebc6; color:#1b7f3a; }
     .receipt-verify.warn { background:#fff8e1; border:1px solid #ffe082; color:#9a6700; }
@@ -464,7 +468,7 @@
       </div>
       <img id="receipt-preview" class="receipt-preview" alt="收據照片">
       <div id="receipt-status" class="offline-note"></div>
-      <div id="ocr-engine-note" class="feature-hint">OCR：優先使用 PP-OCRv5（台／日／英文），若瀏覽器載入失敗會自動改用相容模式。</div>
+      <div id="ocr-engine-note" class="feature-hint">OCR：PP-OCRv5 + 收據結構引擎 7.4（商品／加價／折扣／小計／稅／付款分流）；失敗時自動切換相容 OCR。</div>
       <details style="margin-top:8px">
         <summary style="font-size:.78rem;color:#667085;cursor:pointer;">查看 OCR 原始辨識文字</summary>
         <textarea id="ocr-raw-text" class="input-control" rows="6" style="margin-top:6px;font-size:.72rem;" placeholder="OCR 原始文字會顯示在這裡"></textarea>
@@ -502,7 +506,7 @@
           <span>品項加總</span><span id="receipt-lines-sum">¥0</span>
         </div>
         <div id="receipt-sum-check" class="receipt-verify warn">⚠️ 尚未完成金額驗算</div>
-        <div class="receipt-calc-note">每個品項可自行修改。若收據有折扣、稅金、袋子費、回饋或退稅造成「品項加總」與「收據總額」不同，請以收據實際最終付款／收據總額為最後記帳金額。</div>
+        <div class="receipt-calc-note">7.4 會判斷「商品／加價／折扣」。折扣即使 OCR 漏掉負號，也會依「割引、値引、クーポン、折扣」等文字自動改為扣除；小計、稅額、付款、找零、卡號等只作結構驗證，不會重複加總。每列仍可手動改類型與金額。</div>
       </div>
       <div id="receipt-tax-box" class="fallback-box" style="display:none;margin-top:10px;">
         <b>🇯🇵 日本稅金／退稅辨識</b>
@@ -619,7 +623,7 @@
       'ティッシュ':'面紙','歯ブラシ':'牙刷','歯磨き粉':'牙膏','洗剤':'清潔劑',
       '袋':'袋子','レジ袋':'購物袋','お土産':'伴手禮','免税':'免稅','免税対象':'免稅對象','免税額':'免稅金額','非課税':'非課稅','税込':'含稅','税抜':'未稅','消費税':'消費稅','軽減税率':'優惠稅率','軽':'優惠稅率商品','キャッシュレス還元':'無現金支付回饋','還元':'回饋','オールドファッション':'Old Fashion 原味甜甜圈','たっぷりクリームデニッシュ':'滿餡奶油丹麥麵包','クリームデニッシュ':'奶油丹麥麵包','メロンパン':'哈密瓜麵包（Melon Pan）','カレーパン':'咖哩麵包','あんぱん':'紅豆麵包','クリームパン':'奶油麵包','チーズ':'起司','バター':'奶油','ヨーグルト':'優格','プリン':'布丁','ドーナツ':'甜甜圈','デニッシュ':'丹麥麵包','クリームデニ':'奶油丹麥麵包（原文可能截字，請核對）','オールドファッション':'Old Fashion 原味甜甜圈','メロンパン':'哈密瓜麵包（Melon Pan）','菓子パン':'甜麵包','惣菜パン':'鹹味調理麵包','からあげ':'日式炸雞','唐揚げ':'日式炸雞','おでん':'關東煮','肉まん':'肉包','中華まん':'中華包子','コロッケ':'可樂餅','焼きそば':'炒麵','うどん':'烏龍麵','そば':'蕎麥麵',
       'セイコーマート':'Seicomart 便利商店','ローソン':'Lawson 便利商店','ファミリーマート':'FamilyMart／全家便利商店','FamilyMart':'FamilyMart／全家便利商店',
-      'セブンイレブン':'7-ELEVEN 便利商店','セブン-イレブン':'7-ELEVEN 便利商店','手巻おにぎり辛子明太子':'手捲飯糰・辣味明太子','辛子明太子':'辣味明太子','手巻おにぎり':'手捲飯糰','コカコーラ':'可口可樂','コカ・コーラ':'可口可樂','パラドゥ ミニネイル':'Parado 迷你指甲油','パラドゥ':'Parado','ミニネイル':'迷你指甲油','メビウスワン':'MEVIUS ONE 香菸','50円切手':'50日圓郵票','切手':'郵票','ドラッグストア':'藥妝店',
+      'メーター運賃':'計程車跳表車資','遠距離割引':'長途折扣','運賃料金計':'車資小計','ETC料金':'ETC 高速公路通行費','通行料他':'通行費等','領収書':'收據','再発行':'補發','東京都城東タクシー':'東京都城東計程車','セブンイレブン':'7-ELEVEN 便利商店','セブン-イレブン':'7-ELEVEN 便利商店','手巻おにぎり辛子明太子':'手捲飯糰・辣味明太子','辛子明太子':'辣味明太子','手巻おにぎり':'手捲飯糰','コカコーラ':'可口可樂','コカ・コーラ':'可口可樂','パラドゥ ミニネイル':'Parado 迷你指甲油','パラドゥ':'Parado','ミニネイル':'迷你指甲油','メビウスワン':'MEVIUS ONE 香菸','50円切手':'50日圓郵票','切手':'郵票','ドラッグストア':'藥妝店',
       '發票':'發票','電子發票':'電子發票','統一發票':'統一發票','交易明細':'交易明細',
       '全家':'FamilyMart 全家','統一超商':'7-ELEVEN 統一超商','萊爾富':'Hi-Life 萊爾富',
       'OK超商':'OK 超商','家樂福':'家樂福','全聯':'全聯福利中心','好市多':'Costco 好市多',
@@ -1399,6 +1403,15 @@
       };
 
       const candidates=[], seen=new Set();
+      // 7.4：先抽出「折扣／加價」交易列。這些不是一般商品，但必須參與數學加總。
+      const adjustmentRows=[];
+      const discountWord=/(割引|値引|値引き|クーポン|ディスカウント|OFF|折扣|折價|折讓|優惠券|折價券)/i;
+      const addWord=/(ETC\s*料金|高速料金|通行料|サービス料|手数料|送料|配送料|袋代|レジ袋|容器代|加價|服務費|運費|袋費)/i;
+      for(let i=0;i<lines.length;i++){
+        const l=clean(lines[i]), cp=compact(l); const ns=moneyNums(l); if(!ns.length) continue;
+        if(discountWord.test(l)||discountWord.test(cp)) adjustmentRows.push({name:l.replace(/[¥￥]?\s*-?\d[\d, ]*\s*円?\s*$/,'').trim()||'折扣',amount:-Math.abs(ns[ns.length-1]),role:'discount',confidence:candidateConfidence(l,ns[ns.length-1],ocrItems)});
+        else if(addWord.test(l)||addWord.test(cp)) adjustmentRows.push({name:l.replace(/[¥￥]?\s*[+＋]?\s*\d[\d, ]*\s*円?\s*$/,'').trim()||'加價／費用',amount:Math.abs(ns[ns.length-1]),role:'add',confidence:candidateConfidence(l,ns[ns.length-1],ocrItems)});
+      }
       const addCandidate=(name,amount)=>{
         name=clean(name).replace(/^[=\-:：\s]+/,'').replace(/\s*\d{5,14}\s*$/,'').trim();
         if(!looksName(name) || amount===null || Math.abs(amount)>50000) return;
@@ -1451,6 +1464,13 @@
         }
       }
 
+      // 合併結構列：同金額、相鄰語意重複的 ETC／通行料只保留較明確的一列。
+      adjustmentRows.forEach(a=>{
+        if(a.role==='add' && adjustmentRows.some(b=>b!==a && b.role==='add' && b.amount===a.amount && /ETC/i.test(b.name) && /通行料/.test(a.name))) return;
+        const dup=candidates.findIndex(x=>Math.abs(Number(x.amount)-Number(a.amount))<.01 && (compact(x.name)===compact(a.name) || (a.role==='discount'&&discountWord.test(x.name))));
+        if(dup>=0) candidates.splice(dup,1);
+        candidates.push({...a,warningReasons:[]});
+      });
       let merchant='';
       const head=lines.slice(0,18);
       const brand=head.find(x=>brandRe.test(x));
@@ -1464,7 +1484,7 @@
 
       // 6.7 防呆：永遠排除收據尾端/統計欄，不讓「折價券數量 1」「找零 0」混入品項。
       for(let i=candidates.length-1;i>=0;i--){
-        if(nonItemRe.test(candidates[i].name) || nonItemRe.test(compact(candidates[i].name)) || /^(找零|折價券數量|商品數|小計|合計)$/i.test(compact(candidates[i].name))) candidates.splice(i,1);
+        if(!candidates[i].role && (nonItemRe.test(candidates[i].name) || nonItemRe.test(compact(candidates[i].name)) || /^(找零|折價券數量|商品數|小計|合計)$/i.test(compact(candidates[i].name)))) candidates.splice(i,1);
       }
       // 若 OCR 仍多抓一筆，且移除該筆後剛好等於收據總額，視為統計欄誤抓並移除。
       if(totalGuess && candidates.length>1){
@@ -1477,7 +1497,7 @@
       // 6.10：總額／付款／稅額／回饋列永遠不能成為商品，並忽略 OCR 在關鍵字中插入的空白。
       for(let i=candidates.length-1;i>=0;i--){
         const n=candidates[i].name;
-        if(/(合計|総額|小計|お会計|支払|現計|TOTAL|消費税|内消費税|税額|お預|お釣|残高|還元|対象額)/i.test(n) || /(合計|総額|小計|お会計|支払|現計|TOTAL|消費税|内消費税|税額|お預|お釣|残高|還元|対象額)/i.test(compact(n))) candidates.splice(i,1);
+        if(!candidates[i].role && (/(合計|総額|小計|お会計|支払|現計|TOTAL|消費税|内消費税|税額|お預|お釣|残高|還元|対象額)/i.test(n) || /(合計|総額|小計|お会計|支払|現計|TOTAL|消費税|内消費税|税額|お預|お釣|残高|還元|対象額)/i.test(compact(n)))) candidates.splice(i,1);
       }
 
       // 日本稅務／退稅只依收據實際文字判定，不因看到稅率就自行假設已退稅。
@@ -1509,7 +1529,7 @@
       }
       // FamilyMart 等日本便利商店常在商品後出現「合計→稅→回饋→支付→餘額」；這些金額永不回流成商品。
       const structuralWords=/(合計|総額|小計|お会計|消費税|内消費税|税率|キャッシュレス|還元|支払|交通系|電子マネー|残高|お預|お釣|対象額|TOTAL)/i;
-      for(let i=candidates.length-1;i>=0;i--){if(structuralWords.test(compact(candidates[i].name)))candidates.splice(i,1);}
+      for(let i=candidates.length-1;i>=0;i--){if(!candidates[i].role && structuralWords.test(compact(candidates[i].name)))candidates.splice(i,1);}
 
       // 7.0：先做逐品項品質檢查，再 render，讓可疑列一定看得到 ⚠️。
       candidates.forEach(x=>{
@@ -1519,13 +1539,13 @@
         const tr=region==='jp'?translateJpToCn(n):n;
         const hasKnownTerm=region!=='jp' || !!jpToCn[n] || Object.keys(jpToCn).some(k=>n.includes(k));
         if(region==='jp' && (/デニ$|クリームデニ$/.test(n) || (!hasKnownTerm && /^[ァ-ヶー]{2,}$/.test(n)))) reasons.push('品名可能被截斷或辨識不完整');
-        if(region==='jp' && !tr) reasons.push('中文翻譯無法可靠判定');
+        if(region==='jp' && !tr && !x.role) reasons.push('中文翻譯無法可靠判定');
         x.warningReasons=[...new Set(reasons)];
       });
       const editor=document.getElementById('receipt-items-editor'); editor.innerHTML='';
       if(!candidates.length) addReceiptLine();
-      candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||receiptTranslationFallback(x.name)||''):x.name, x.amount, x.confidence, region, x.warningReasons||[]));
-      const itemSum=candidates.reduce((a,x)=>a+x.amount,0);
+      candidates.forEach(x=>addReceiptLine(x.name, region==='jp'?(translateJpToCn(x.name)||receiptTranslationFallback(x.name)||''):x.name, x.amount, x.confidence, region, x.warningReasons||[], x.role||receiptRoleFor(x.name,x.amount,region)));
+      const itemSum=candidates.reduce((a,x)=>a+(x.role==='discount'?-Math.abs(Number(x.amount||0)):Math.abs(Number(x.amount||0))),0);
 
       // 7.0：不再用「品項加總」自動改寫 OCR 收據總額。
       // 若 OCR 總額與品項加總不同，只顯示警告，讓使用者依實體收據決定。
@@ -1537,59 +1557,63 @@
       const reliable=!!totalGuess && sumMatches && candidates.length>=1 && lowConfidenceCount===0;
       return {reliable,total:totalGuess,items:candidates.length,itemSum,payment,sumMatches,region,warnings:lowConfidenceCount};
     }
-    function addReceiptLine(jp='', cn='', amount='', confidence=null, regionOverride=null, warningReasons=[]) {
+    function receiptRoleFor(name, amount, region='jp') {
+      const n=String(name||'').replace(/[\s　:：・･._]/g,'');
+      if(/(割引|値引|値引き|クーポン|クーポン値引|ディスカウント|OFF|割戻|折扣|折價|折讓|優惠券|折價券)/i.test(n)) return 'discount';
+      if(/(ETC料金|通行料|高速料金|サービス料|手数料|送料|配送料|袋代|レジ袋|容器代|チャージ|加價|服務費|運費|袋費)/i.test(n)) return 'add';
+      return 'item';
+    }
+    function receiptRoleLabel(role){ return role==='discount'?'➖ 折扣（扣除）':role==='add'?'➕ 加價／費用':'🛍️ 商品／服務'; }
+    function addReceiptLine(jp='', cn='', amount='', confidence=null, regionOverride=null, warningReasons=[], roleOverride=null) {
       const row = document.createElement('div');
       row.className = 'receipt-item-row';
       const region=regionOverride || document.getElementById('receipt-region')?.value || 'jp';
-      const low=(confidence===null || confidence<.82 || warningReasons.length>0);
+      const role=roleOverride || receiptRoleFor(jp,amount,region);
+      if(role==='discount') row.classList.add('role-discount');
+      if(role==='add') row.classList.add('role-add');
+      const low=(confidence!==null && confidence<.72) || warningReasons.length>0;
       if(low) row.classList.add('ocr-low-confidence');
       const c=receiptCurrencyInfo(document.getElementById('receipt-region')?.value==='tw'?'tw':'jp');
+      const signedAmount=role==='discount' && amount!=='' ? -Math.abs(Number(amount)||0) : amount;
       row.innerHTML = `<input class="input-control receipt-jp" placeholder="收據原文品項" value="${escapeHtml(jp)}">
                        <input class="input-control receipt-cn" placeholder="中文對照" value="${escapeHtml(cn)}">
-                       <input type="number" class="input-control line-amount" placeholder="${c.symbol}0" value="${amount !== '' ? amount : ''}">
+                       <input type="number" class="input-control line-amount" placeholder="${c.symbol}0" value="${signedAmount !== '' ? signedAmount : ''}">
                        <button type="button" class="receipt-remove" title="刪除此品項">✕</button>
-                       ${low?`<div class="receipt-row-warning">⚠️ 請確認：${escapeHtml((warningReasons.length?warningReasons:['OCR／翻譯可信度不足']).join('、'))}${confidence!==null?'（OCR '+Math.round(confidence*100)+'%）':''}。可直接修改或按 × 刪除。</div>`:''}`;
-      const jpInput = row.querySelector('.receipt-jp');
-      const cnInput = row.querySelector('.receipt-cn');
-      const amtInput = row.querySelector('.line-amount');
+                       <div class="receipt-role"><span>此列：</span><select class="input-control line-role"><option value="item">🛍️ 商品／服務</option><option value="add">➕ 加價／費用</option><option value="discount">➖ 折扣（扣除）</option></select><span class="role-hint"></span></div>
+                       ${low?`<div class="receipt-row-warning">⚠️ 請確認：${escapeHtml((warningReasons.length?warningReasons:['OCR 可信度較低']).join('、'))}${confidence!==null?'（OCR '+Math.round(confidence*100)+'%）':''}。可直接修改、改類型或按 × 刪除。</div>`:''}`;
+      const jpInput = row.querySelector('.receipt-jp'), cnInput=row.querySelector('.receipt-cn'), amtInput=row.querySelector('.line-amount'), roleSel=row.querySelector('.line-role');
+      roleSel.value=role;
+      const syncRole=()=>{
+        const r=roleSel.value; row.classList.toggle('role-discount',r==='discount'); row.classList.toggle('role-add',r==='add');
+        if(r==='discount' && Number(amtInput.value)>0) amtInput.value=-Math.abs(Number(amtInput.value));
+        if(r!=='discount' && Number(amtInput.value)<0) amtInput.value=Math.abs(Number(amtInput.value));
+        row.querySelector('.role-hint').textContent=r==='discount'?'會從加總扣除':r==='add'?'會加入加總':'會加入加總'; updateReceiptTotals();
+      };
+      roleSel.addEventListener('change',syncRole); syncRole();
       jpInput.addEventListener('input', async ()=>{
         if(region!=='jp') return;
-        const t=translateJpToCn(jpInput.value);
-        if(t) cnInput.value=t;
-        else { const online=await translateJpToCnOnline(jpInput.value); if(online && document.activeElement!==cnInput) cnInput.value=online; }
+        const t=translateJpToCn(jpInput.value); if(t) cnInput.value=t; else { const online=await translateJpToCnOnline(jpInput.value); if(online && document.activeElement!==cnInput) cnInput.value=online; }
       });
-      if(region==='jp' && jp && !cn){
-        translateJpToCnOnline(jp).then(t=>{
-          if(t && !cnInput.value) cnInput.value=t;
-          if(!cnInput.value){
-            row.classList.add('ocr-low-confidence');
-            if(!row.querySelector('.translation-warning')){
-              const w=document.createElement('div'); w.className='receipt-row-warning translation-warning';
-              w.textContent='⚠️ 此日文品名尚未能可靠翻譯，請對照收據手動補中文；也可以直接保留日文或按 × 刪除。';
-              row.appendChild(w);
-            }
-          }
-        });
-      }
-      amtInput.addEventListener('input', updateReceiptTotals);
+      if(region==='jp' && jp && !cn) translateJpToCnOnline(jp).then(t=>{ if(t && !cnInput.value) cnInput.value=t; });
+      amtInput.addEventListener('input',()=>{ if(roleSel.value==='discount' && Number(amtInput.value)>0) amtInput.value=-Math.abs(Number(amtInput.value)); updateReceiptTotals(); });
       row.querySelector('.receipt-remove').onclick=()=>{ row.remove(); updateReceiptTotals(); };
       if(region==='tw'){ cnInput.style.display='none'; cnInput.value=jpInput.value; }
-      document.getElementById('receipt-items-editor').appendChild(row);
-      updateReceiptTotals();
+      document.getElementById('receipt-items-editor').appendChild(row); updateReceiptTotals();
     }
 
     function updateReceiptTotals() {
-      const sum=[...document.querySelectorAll('#receipt-items-editor .line-amount')].reduce((a,x)=>a+(parseFloat(x.value)||0),0);
-      const region=document.getElementById('receipt-region')?.value;
-      const c=receiptCurrencyInfo(region==='tw'?'tw':'jp');
-      const el=document.getElementById('receipt-lines-sum'); if(el) el.textContent=c.symbol+sum.toLocaleString();
+      const rows=[...document.querySelectorAll('#receipt-items-editor .receipt-item-row')];
+      let positive=0, discounts=0;
+      rows.forEach(r=>{ const v=Math.abs(parseFloat(r.querySelector('.line-amount')?.value)||0); const role=r.querySelector('.line-role')?.value||'item'; if(role==='discount') discounts+=v; else positive+=v; });
+      const sum=positive-discounts;
+      const region=document.getElementById('receipt-region')?.value, c=receiptCurrencyInfo(region==='tw'?'tw':'jp');
+      const el=document.getElementById('receipt-lines-sum'); if(el) el.textContent=c.symbol+sum.toLocaleString()+(discounts?`（含折扣 -${c.symbol}${discounts.toLocaleString()}）`:'');
       const lab=document.getElementById('receipt-total-label'); if(lab) lab.textContent='收據總額 '+c.symbol;
-      const plab=document.getElementById('receipt-paid-label'); if(plab) plab.innerHTML='實際付款 '+c.symbol+' <span style="font-size:.7rem;color:#777">（若有回饋／折扣，記帳以此金額為準）</span>';
-      const total=parseFloat(document.getElementById('receipt-total')?.value)||0;
-      const check=document.getElementById('receipt-sum-check');
+      const plab=document.getElementById('receipt-paid-label'); if(plab) plab.innerHTML='實際付款 '+c.symbol+' <span style="font-size:.7rem;color:#777">（記帳以此金額為準）</span>';
+      const total=parseFloat(document.getElementById('receipt-total')?.value)||0, check=document.getElementById('receipt-sum-check');
       if(check){
-        if(total>0 && Math.abs(sum-total)<=1){ check.className='receipt-verify ok'; check.textContent='✅ 結構驗證通過：商品列已排除合計／稅額／付款等非商品欄，且品項加總與收據總額相符。'; }
-        else if(total>0){ check.className='receipt-verify warn'; check.textContent='⚠️ 品項加總 '+c.symbol+sum.toLocaleString()+' 與收據總額 '+c.symbol+total.toLocaleString()+' 不一致，請檢查標記品項、折扣、稅金或付款列；可直接修改或刪除。'; }
+        if(total>0 && Math.abs(sum-total)<=1){ check.className='receipt-verify ok'; check.textContent=`✅ 結構驗證通過：加總 ${c.symbol}${positive.toLocaleString()} − 折扣 ${c.symbol}${discounts.toLocaleString()} = ${c.symbol}${sum.toLocaleString()}，與收據總額一致。`; }
+        else if(total>0){ check.className='receipt-verify warn'; check.textContent=`⚠️ 結構驗算：加總 ${c.symbol}${positive.toLocaleString()} − 折扣 ${c.symbol}${discounts.toLocaleString()} = ${c.symbol}${sum.toLocaleString()}；收據總額為 ${c.symbol}${total.toLocaleString()}。請檢查是否有漏掉商品／加價／折扣，或誤把小計、稅額、付款列算進來。`; }
         else { check.className='receipt-verify warn'; check.textContent='⚠️ 尚未取得可靠收據總額，請對照照片確認。'; }
       }
     }
@@ -1599,7 +1623,8 @@
       const pairs = rows.map(r => ({
         jp:r.querySelector('.receipt-jp').value.trim(),
         cn:r.querySelector('.receipt-cn').value.trim(),
-        amount:parseFloat(r.querySelector('.line-amount').value) || 0
+        amount:parseFloat(r.querySelector('.line-amount').value) || 0,
+        role:r.querySelector('.line-role')?.value || 'item'
       })).filter(x=>x.jp || x.cn || x.amount);
       const merchantJp = document.getElementById('receipt-merchant-jp').value.trim();
       const merchantCn = document.getElementById('receipt-merchant-cn').value.trim() || translateJpToCn(merchantJp);
