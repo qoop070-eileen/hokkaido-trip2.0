@@ -196,7 +196,7 @@
 </head>
 <body>
   <div style="position:sticky;top:0;z-index:9999;background:#fff3cd;border-bottom:1px solid #e6b800;padding:7px 10px;text-align:center;font-size:.78rem;font-weight:700;color:#6b5200">
-    🧪 7.1 整合測試版｜請測：語音直接新增、通用旅程、地圖導航、收據結構 OCR
+    🧪 7.2 整合修正版｜語音直接新增・通用旅程・App 編輯視窗・收據結構 OCR
   </div>
 
   <!-- Header -->
@@ -447,6 +447,15 @@
         </div>
         <button type="submit" class="btn mt-10">新增消費</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: App 自訂文字編輯（取代瀏覽器 prompt，避免顯示 github.io 網站標頭） -->
+  <div id="modal-text-editor" class="modal">
+    <div class="modal-content">
+      <div class="modal-header"><span id="text-editor-title">編輯</span><button class="action-btn-sm" onclick="cancelTextEditor()">✕</button></div>
+      <div class="input-group"><label id="text-editor-label">內容</label><input id="text-editor-input" class="input-control"></div>
+      <div style="display:flex;gap:10px"><button class="btn btn-secondary" type="button" onclick="cancelTextEditor()">取消</button><button class="btn" type="button" onclick="confirmTextEditor()">確定</button></div>
     </div>
   </div>
 
@@ -706,30 +715,20 @@
       });
     }
 
-    function editChecklistItem(type,cIdx,iIdx){
+    async function editChecklistItem(type,cIdx,iIdx){
       const target=type==='pre'?appData.preCheck:appData.postCheck;
-      const v=prompt('修改項目：',target[cIdx].items[iIdx]);
+      const v=await askText('修改 Checklist 項目','項目內容',target[cIdx].items[iIdx]);
       if(v!==null && v.trim()){target[cIdx].items[iIdx]=v.trim();saveData();renderChecklist(type);}
     }
 
-    function addCategory(type) {
-      const name = prompt('請輸入新分類名稱：');
-      if(name) {
-        const target = type === 'pre' ? appData.preCheck : appData.postCheck;
-        target.push({ id: Date.now().toString(), title: name, items: [] });
-        saveData();
-        renderChecklist(type);
-      }
+    async function addCategory(type) {
+      const name=await askText('新增 Checklist 分類','分類名稱','');
+      if(name?.trim()){const target=type==='pre'?appData.preCheck:appData.postCheck;target.push({id:Date.now().toString(),title:name.trim(),items:[]});saveData();renderChecklist(type);}
     }
 
-    function editCategoryTitle(type, cIdx) {
-      const target = type === 'pre' ? appData.preCheck : appData.postCheck;
-      const newTitle = prompt('修改分類名稱：', target[cIdx].title);
-      if(newTitle) {
-        target[cIdx].title = newTitle;
-        saveData();
-        renderChecklist(type);
-      }
+    async function editCategoryTitle(type,cIdx){
+      const target=type==='pre'?appData.preCheck:appData.postCheck; const newTitle=await askText('修改 Checklist 分類','分類名稱',target[cIdx].title);
+      if(newTitle?.trim()){target[cIdx].title=newTitle.trim();saveData();renderChecklist(type);}
     }
 
     function deleteCategory(type, cIdx) {
@@ -741,15 +740,7 @@
       }
     }
 
-    function addItem(type, cIdx) {
-      const itemText = prompt('請輸入新項目內容：');
-      if(itemText) {
-        const target = type === 'pre' ? appData.preCheck : appData.postCheck;
-        target[cIdx].items.push(itemText);
-        saveData();
-        renderChecklist(type);
-      }
-    }
+    async function addItem(type,cIdx){ const itemText=await askText('新增 Checklist 項目','項目內容',''); if(itemText?.trim()){const target=type==='pre'?appData.preCheck:appData.postCheck;target[cIdx].items.push(itemText.trim());saveData();renderChecklist(type);} }
 
     function deleteItem(type, cIdx, iIdx) {
       const target = type === 'pre' ? appData.preCheck : appData.postCheck;
@@ -792,7 +783,7 @@
         }
       }
       const h=document.getElementById('app-trip-heading'); if(h)h.textContent=`${title}${keys.length?'・'+keys.length+'日':''}${range}`;
-      document.title=`${title}｜旅行助手 7.1`;
+      document.title=`${title}｜旅行助手 7.2`;
     }
     function renderDayTabs(){
       ensureTripSchema();
@@ -838,19 +829,21 @@
       }).join('');
       container.innerHTML=`<div class="card-title"><span>Day ${currentTripDay} 景點與行程 (${escapeHtml(dayData.date||'')})</span><button class="action-btn-sm" onclick="addSpot(${currentTripDay})">＋ 新增景點</button></div><div>${spotsHtml||'<p>尚無景點。</p>'}</div>`;
     }
-    function addTripDay(){
-      ensureTripSchema(); const keys=Object.keys(appData.itinerary).map(Number); const k=keys.length?Math.max(...keys)+1:1;
-      const date=prompt('新增日期／標題（例：10/3 (六)）：',''); if(date===null)return;
-      appData.itinerary[k]={date:date.trim(),spots:[]}; currentTripDay=k; saveData(); switchDay(k);
+    let textEditorResolve=null;
+    function askText(title,label,value=''){
+      return new Promise(resolve=>{ textEditorResolve=resolve; document.getElementById('text-editor-title').textContent=title; document.getElementById('text-editor-label').textContent=label; const inp=document.getElementById('text-editor-input'); inp.value=value||''; document.getElementById('modal-text-editor').classList.add('active'); setTimeout(()=>{inp.focus();inp.select();},80); });
     }
-    function editCurrentDay(){ const d=appData.itinerary[currentTripDay]; if(!d)return; const v=prompt('修改這一天的日期／標題：',d.date||''); if(v!==null){d.date=v.trim();saveData();switchDay(currentTripDay);} }
+    function confirmTextEditor(){ const v=document.getElementById('text-editor-input').value; closeModal('modal-text-editor'); const r=textEditorResolve;textEditorResolve=null;if(r)r(v); }
+    function cancelTextEditor(){ closeModal('modal-text-editor'); const r=textEditorResolve;textEditorResolve=null;if(r)r(null); }
+    async function addTripDay(){ ensureTripSchema(); const keys=Object.keys(appData.itinerary).map(Number); const k=keys.length?Math.max(...keys)+1:1; const date=await askText('新增一天','日期／標題（例：10/3 (六)）',''); if(date===null)return; appData.itinerary[k]={date:date.trim(),spots:[]}; currentTripDay=k; saveData(); switchDay(k); }
+    async function editCurrentDay(){ const d=appData.itinerary[currentTripDay]; if(!d)return; const v=await askText('編輯日期','日期／標題',d.date||''); if(v!==null){d.date=v.trim();saveData();switchDay(currentTripDay);} }
     function deleteCurrentDay(){ const keys=Object.keys(appData.itinerary).map(Number).sort((a,b)=>a-b); if(keys.length<=1){alert('至少保留一天行程。');return;} if(!confirm('確定刪除目前這一天與其所有景點紀錄？'))return; delete appData.itinerary[currentTripDay]; const obj={}; Object.keys(appData.itinerary).map(Number).sort((a,b)=>a-b).forEach((k,i)=>obj[i+1]=appData.itinerary[k]); appData.itinerary=obj; currentTripDay=1; saveData();switchDay(1);}
-    function addSpot(day){ const name=prompt('景點／商店顯示名稱：'); if(!name)return; const desc=prompt('說明（可留空）：','')||''; const mapQuery=prompt('地圖搜尋位置（可填店名、地址；留空就使用顯示名稱）：',name)||name; appData.itinerary[day].spots.push({name:name.trim(),desc:desc.trim(),mapQuery:mapQuery.trim(),visited:false,records:[]});saveData();switchDay(day);}
-    function editSpot(day,i){const sp=appData.itinerary[day].spots[i];const n=prompt('景點／商店顯示名稱：',sp.name);if(n===null)return;const d=prompt('說明：',sp.desc||'');const q=prompt('地圖搜尋位置／地址：',sp.mapQuery||sp.name);sp.name=n.trim()||sp.name;sp.desc=d===null?sp.desc:d.trim();sp.mapQuery=q===null?(sp.mapQuery||sp.name):(q.trim()||sp.name);saveData();switchDay(day);}
+    async function addSpot(day){ const name=await askText('新增景點／商店','顯示名稱',''); if(!name?.trim())return; const desc=await askText('新增景點／商店','說明（可留空）',''); if(desc===null)return; const mapQuery=await askText('設定地圖位置','Google 地圖搜尋位置／地址',name.trim()); if(mapQuery===null)return; appData.itinerary[day].spots.push({name:name.trim(),desc:desc.trim(),mapQuery:mapQuery.trim()||name.trim(),visited:false,records:[]});saveData();switchDay(day);}
+    async function editSpot(day,i){const sp=appData.itinerary[day].spots[i];const n=await askText('編輯景點／商店','顯示名稱',sp.name);if(n===null)return;const d=await askText('編輯景點／商店','說明',sp.desc||'');if(d===null)return;const q=await askText('設定地圖位置','Google 地圖搜尋位置／地址',sp.mapQuery||sp.name);if(q===null)return;sp.name=n.trim()||sp.name;sp.desc=d.trim();sp.mapQuery=q.trim()||sp.name;saveData();switchDay(day);}
     function toggleVisited(day,i){const sp=appData.itinerary[day].spots[i];sp.visited=!sp.visited;saveData();switchDay(day);}
     function deleteSpot(day,i){if(confirm('刪除此景點與其紀錄？')){appData.itinerary[day].spots.splice(i,1);saveData();switchDay(day);}}
-    function addSpotRecord(day,i,text=''){const v=text||prompt('新增已造訪／購物／備註紀錄：');if(!v)return;appData.itinerary[day].spots[i].records.push(v.trim());saveData();switchDay(day);}
-    function editSpotRecord(day,i,r){const sp=appData.itinerary[day].spots[i],v=prompt('修改紀錄：',sp.records[r]);if(v!==null&&v.trim()){sp.records[r]=v.trim();saveData();switchDay(day);}}
+    async function addSpotRecord(day,i,text=''){const v=text||await askText('新增紀錄','已造訪／購物／備註紀錄','');if(!v?.trim())return;appData.itinerary[day].spots[i].records.push(v.trim());saveData();switchDay(day);}
+    async function editSpotRecord(day,i,r){const sp=appData.itinerary[day].spots[i],v=await askText('修改紀錄','紀錄內容',sp.records[r]);if(v!==null&&v.trim()){sp.records[r]=v.trim();saveData();switchDay(day);}}
     function deleteSpotRecord(day,i,r){appData.itinerary[day].spots[i].records.splice(r,1);saveData();switchDay(day);}
 
     // --- Shopping & Price Comparison Component ---
@@ -1662,10 +1655,8 @@
       const ctx=voiceContext; if(activeRecognition){try{activeRecognition.stop()}catch(e){} activeRecognition=null;}
       if(!ctx)return;
       setGenericVoiceButton(document.getElementById(ctx.btnId),false,ctx.label);
-      const text=(voiceFinalText+' '+voiceInterimText).trim();
       voiceContext=null;
-      if(text) ctx.onDone(text);
-      else {const st=document.getElementById(ctx.statusId);if(st)st.innerHTML='<div class="voice-status">⚠️ 沒有取得語音內容，請再試一次。</div>';}
+      setTimeout(()=>{ const text=(voiceFinalText+' '+voiceInterimText).trim(); if(text) ctx.onDone(text); else {const st=document.getElementById(ctx.statusId);if(st)st.innerHTML='<div class="voice-status">⚠️ 沒有取得語音內容，請再試一次。</div>';} },350);
     }
     function toggleChecklistVoice(type,cIdx){
       const id=`voice-${type}-${cIdx}`,sid=`voice-status-${type}-${cIdx}`;
@@ -1694,6 +1685,10 @@
     }
 
     function showVoiceResult(id,html){const el=document.getElementById(id);if(el)el.innerHTML='<div class="voice-status">'+html+'</div>';}
+    function chineseDigitsToNumber(raw){ const m={'零':0,'一':1,'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9}; if(/^\d+(?:\.\d+)?$/.test(raw))return Number(raw); let total=0,section=0,num=0; for(const c of raw){if(c in m)num=m[c];else if(c==='十'){section+=(num||1)*10;num=0}else if(c==='百'){section+=(num||1)*100;num=0}else if(c==='千'){section+=(num||1)*1000;num=0}else if(c==='萬'){total+=(section+num||1)*10000;section=0;num=0}} return total+section+num; }
+    function normalizeSpokenNumber(t){ const x=String(t||'').replace(/[，,]/g,''); const d=x.match(/\d+(?:\.\d+)?/); if(d)return Number(d[0]); const c=x.match(/[零一二兩三四五六七八九十百千萬]+/); return c?chineseDigitsToNumber(c[0]):0; }
+    function extractAmounts(text){ const t=String(text||'').replace(/[，,]/g,''); const pick=(re)=>{const m=t.match(re);return m?normalizeSpokenNumber(m[1]):0}; let jpy=pick(/(?:日本|日幣|日圓|日元|¥)\s*([0-9零一二兩三四五六七八九十百千萬]+)/i)||pick(/([0-9零一二兩三四五六七八九十百千萬]+)\s*(?:日圓|日元|円)/i); let twd=pick(/(?:台灣|台幣|NT\$?)\s*([0-9零一二兩三四五六七八九十百千萬]+)/i)||pick(/([0-9零一二兩三四五六七八九十百千萬]+)\s*(?:台幣|元台幣)/i); return {jpy,twd}; }
+    function cleanSpokenItem(text){ return String(text||'').replace(/^(新增|幫我新增|記帳|幫我記帳)\s*/,'').replace(/(日本|日幣|日圓|日元|¥|台灣|台幣|NT\$?)?\s*[0-9零一二兩三四五六七八九十百千萬]+\s*(日圓|日元|円|台幣|元)?/gi,' ').replace(/(現金|信用卡|刷卡|買|購買)/g,' ').replace(/\s+/g,' ').trim(); }
     function parseShoppingText(){
       const text=document.getElementById('voice-shop-text').value.trim(); if(!text)return;
       const a=extractAmounts(text), item=cleanSpokenItem(text)||text;
