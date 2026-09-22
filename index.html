@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>【測試版 7.8.3】旅行助手｜重新翻譯與付款明細修正版</title>
+  <title>【測試版 7.8.4】旅行助手｜品名翻譯保護與刪除視窗修正版</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -110,6 +110,17 @@
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; padding: 15px; }
     .modal.active { display: flex; }
     .modal-content { background: white; border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; padding: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }
+    #app-confirm-modal { z-index:3000; }
+    #app-confirm-modal[hidden] { display:none!important; }
+    .app-confirm-card { max-width:400px; border-radius:18px; padding:24px; }
+    .app-confirm-title { font-size:1.05rem; margin-bottom:12px; }
+    .app-confirm-message { font-size:.95rem; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .app-confirm-actions { display:flex; gap:12px; margin-top:24px; }
+    .app-confirm-actions button { flex:1; min-height:46px; }
+    .receipt-translation-alternative { grid-column:1/-1; font-size:.76rem; line-height:1.55; padding:7px; border:1px solid var(--border); border-radius:8px; }
+    .receipt-translation-alternative summary { cursor:pointer; color:#1565c0; }
+    .receipt-translation-alternative p { margin:8px 0; overflow-wrap:anywhere; }
+    .receipt-translation-alternative button { font-size:.78rem; padding:8px 12px; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 1.1rem; margin-bottom: 15px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
     .clerk-view { text-align: center; padding: 20px 10px; }
     .clerk-jp { font-size: 1.8rem; font-weight: bold; color: #1565c0; margin: 15px 0; word-break: break-word; }
@@ -491,7 +502,7 @@
       </div>
       <img id="receipt-preview" class="receipt-preview" alt="收據照片">
       <div id="receipt-status" class="offline-note"></div>
-      <div id="ocr-engine-note" class="feature-hint">收據解析 7.8.3｜核對商品、費用小計與實付；手動重譯會重新連網，顯示更新筆數與結果。</div>
+      <div id="ocr-engine-note" class="feature-hint">收據解析 7.8.4｜核對商品、費用小計與實付；重新查詢品名時，優先採用完整商品譯名。</div>
       <details style="margin-top:8px">
         <summary style="font-size:.78rem;color:#667085;cursor:pointer;">查看 OCR 原始辨識文字</summary>
         <textarea id="ocr-raw-text" class="input-control" rows="6" style="margin-top:6px;font-size:.72rem;" placeholder="OCR 原始文字會顯示在這裡"></textarea>
@@ -512,7 +523,7 @@
         <button class="btn feature-btn" type="button" id="receipt-translate-button" aria-busy="false" onclick="translateAllReceiptRows(true)">🌐 重新翻譯全部</button>
       </div>
       <div id="receipt-translate-feedback" class="receipt-translate-feedback" role="status" aria-live="polite" hidden></div>
-      <div class="feature-hint">重新翻譯會連網重試所有自動翻譯品名，保留手動修改的中文。若原文漏字，請使用「重新 OCR」。</div>
+      <div class="feature-hint">重新翻譯會重新查詢，優先採用商品詞庫。已有的中文會保留；其他譯名可展開選用。若原文漏字，請使用「重新 OCR」。</div>
       <div class="input-group">
         <label>店家／摘要（日文）</label>
         <input id="receipt-merchant-jp" class="input-control" placeholder="例: セイコーマート">
@@ -571,6 +582,17 @@
       <div id="android-test-results" class="fallback-box">按「開始檢測」後，會檢查 HTTPS/PWA、麥克風、語音辨識、相機 API、OCR 引擎與離線狀態。</div>
       <button class="btn mt-10" type="button" onclick="runAndroidDiagnostics()">開始檢測</button>
     </div>
+  </div>
+
+  <div id="app-confirm-modal" class="modal" hidden>
+    <section class="modal-content app-confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="app-confirm-title" aria-describedby="app-confirm-message" tabindex="-1">
+      <h2 id="app-confirm-title" class="app-confirm-title">確認刪除</h2>
+      <p id="app-confirm-message" class="app-confirm-message"></p>
+      <div class="app-confirm-actions">
+        <button id="app-confirm-cancel" class="btn btn-outline" type="button">取消</button>
+        <button id="app-confirm-accept" class="btn" type="button">確定刪除</button>
+      </div>
+    </section>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js"></script>
@@ -745,9 +767,25 @@
         localStorage.setItem('hk_receipt_translation_cache_v4',JSON.stringify(Object.fromEntries(entries)));
       }catch(e){}
     }
+    function receiptTranslationPreservesMeaning(src,out){
+      // Explicit product clues only; a fluent Chinese string alone is not proof of meaning.
+      const clues=[
+        [/オールドファッション|ドーナツ/i,/甜甜圈|甜甜圏|多拿滋|donut|doughnut/i],
+        [/デニ(?:ッシュ|ー)?/,/丹麥|丹麦|danish/i],
+        [/パン/,/麵包|面包|吐司|土司|餐包|菠蘿包|菠萝包|可頌|可颂|bread|bun|roll/i],
+        [/おにぎり/,/飯糰|飯團|饭团|rice ball/i],
+        [/ラーメン|担々麺|坦々麺|うどん|そば/,/麵|面|noodle|udon|soba|ramen/i],
+        [/ネイル/,/指甲|美甲|nail/i],
+        [/切手/,/郵票|邮票|stamp/i]
+      ];
+      if(clues.some(([jp,cn])=>jp.test(src)&&!cn.test(out)))return false;
+      const codes=String(src).match(/\b[A-Z]{1,5}\d{1,6}\b/gi)||[];
+      return codes.every(code=>String(out).toUpperCase().includes(code.toUpperCase()));
+    }
     function validOnlineReceiptTranslation(src,out){
       const a=String(src||'').trim(), b=String(out||'').trim();
-      if(!a||!b||a===b||/^\d+$/.test(a)||/密碼|密码|庫什特|瓜包子/.test(b)) return false;
+      if(!a||!b||a===b||/^\d+$/.test(a)||/密碼|密码|庫什特|瓜包子|待確認|待确认|等待翻譯|未翻譯/.test(b)) return false;
+      if(!receiptTranslationPreservesMeaning(a,b))return false;
       if(containsJapanese(b))return false;
       const nums=t=>(t.match(/\d+(?:[.,]\d+)?/g)||[]).join(',');
       if(nums(a)!==nums(b))return false;
@@ -780,27 +818,37 @@
         return await Promise.race([request,cancel]);
       }finally{clearTimeout(timer);signal?.removeEventListener('abort',abortListener);}
     }
-    async function translateReceiptNameDetailed(text,{force=false,signal}={}){
+    async function translateReceiptNameDetailed(text,{force=false,signal,previous=null}={}){
       const src=sanitizeReceiptProductName(text),local=localReceiptTranslation(src);
       if(!src)return {text:'',complete:false,source:'empty'};
       // A user-requested retry must reach the service, even for dictionary hits.
       if(local.complete&&!force)return local;
       if(!force&&receiptTranslationCache[src]&&validOnlineReceiptTranslation(src,receiptTranslationCache[src]))return {text:receiptTranslationCache[src],complete:true,source:'cache',review:true};
-      let errorReason='offline',onlineAttempted=false;
+      let errorReason='offline',onlineAttempted=false,onlineReceived=false;
       if(navigator.onLine!==false){
         try{
           onlineAttempted=true;
           const online=await fetchReceiptTranslation(src,{signal});
+          onlineReceived=true;
+          // A retry still queries the service, but does not replace a complete glossary
+          // product name with a generic literal translation such as "舊時尚".
+          if(local.complete){
+            if(receiptTranslationCache[src]){delete receiptTranslationCache[src];saveReceiptTranslationCache();}
+            return {...local,onlineAttempted:true,onlineReceived:true,qualityDecision:'glossary'};
+          }
           if(validOnlineReceiptTranslation(src,online)){
+            if(force&&previous?.complete&&validOnlineReceiptTranslation(src,previous.text)&&online!==previous.text){
+              return {...previous,complete:true,onlineAttempted:true,onlineReceived:true,qualityDecision:'keep-previous',alternative:online};
+            }
             receiptTranslationCache[src]=online;saveReceiptTranslationCache();
-            return {text:online,complete:true,source:'online',review:true,onlineAttempted:true,canonical:local.canonical||''};
+            return {text:online,complete:true,source:'online',review:true,onlineAttempted:true,onlineReceived:true};
           }
           errorReason='invalid';
         }catch(e){errorReason=e.reason||'network';}
       }
-      if(local.complete)return {...local,retained:true,errorReason,onlineAttempted};
+      if(local.complete)return {...local,retained:true,errorReason,onlineAttempted,onlineReceived};
       const category=receiptTranslationFallback(src);
-      return {text:category?category+'（完整品名待確認）':'中文品名待確認',complete:false,source:category?'category':'failed',errorReason,onlineAttempted,message:receiptTranslationError(errorReason)};
+      return {text:category?category+'（完整品名待確認）':'中文品名待確認',complete:false,source:category?'category':'failed',errorReason,onlineAttempted,onlineReceived,message:receiptTranslationError(errorReason)};
     }
 
     async function translateJpToCnOnline(text,force=false){
@@ -885,13 +933,12 @@
       if(newTitle?.trim()){target[cIdx].title=newTitle.trim();saveData();renderChecklist(type);}
     }
 
-    function deleteCategory(type, cIdx) {
-      if(confirm('確定要刪除此大項分類嗎？')) {
-        const target = type === 'pre' ? appData.preCheck : appData.postCheck;
-        target.splice(cIdx, 1);
-        saveData();
-        renderChecklist(type);
-      }
+    async function deleteCategory(type,cIdx){
+      const target=type==='pre'?appData.preCheck:appData.postCheck,category=target[cIdx];
+      if(!category||!await confirmInApp('確定要刪除此大項分類嗎？'))return;
+      const current=type==='pre'?appData.preCheck:appData.postCheck,index=current.indexOf(category);
+      if(index<0)return;
+      current.splice(index,1);saveData();renderChecklist(type);
     }
 
     async function addItem(type,cIdx){ const itemText=await askText('新增 Checklist 項目','項目內容',''); if(itemText?.trim()){const target=type==='pre'?appData.preCheck:appData.postCheck;target[cIdx].items.push(itemText.trim());saveData();renderChecklist(type);} }
@@ -937,7 +984,7 @@
         }
       }
       const h=document.getElementById('app-trip-heading'); if(h)h.textContent=`${title}${keys.length?'・'+keys.length+'日':''}${range}`;
-      document.title=`${title}｜旅行助手 7.8.3`;
+      document.title=`${title}｜旅行助手 7.8.4`;
     }
     function renderDayTabs(){
       ensureTripSchema();
@@ -991,11 +1038,27 @@
     function cancelTextEditor(){ closeModal('modal-text-editor'); const r=textEditorResolve;textEditorResolve=null;if(r)r(null); }
     async function addTripDay(){ ensureTripSchema(); const keys=Object.keys(appData.itinerary).map(Number); const k=keys.length?Math.max(...keys)+1:1; const date=await askText('新增一天','日期／標題（例：10/3 (六)）',''); if(date===null)return; appData.itinerary[k]={date:date.trim(),spots:[]}; currentTripDay=k; saveData(); switchDay(k); }
     async function editCurrentDay(){ const d=appData.itinerary[currentTripDay]; if(!d)return; const v=await askText('編輯日期','日期／標題',d.date||''); if(v!==null){d.date=v.trim();saveData();switchDay(currentTripDay);} }
-    function deleteCurrentDay(){ const keys=Object.keys(appData.itinerary).map(Number).sort((a,b)=>a-b); if(keys.length<=1){alert('至少保留一天行程。');return;} if(!confirm('確定刪除目前這一天與其所有景點紀錄？'))return; delete appData.itinerary[currentTripDay]; const obj={}; Object.keys(appData.itinerary).map(Number).sort((a,b)=>a-b).forEach((k,i)=>obj[i+1]=appData.itinerary[k]); appData.itinerary=obj; currentTripDay=1; saveData();switchDay(1);}
+    async function deleteCurrentDay(){
+      const day=appData.itinerary[currentTripDay];
+      if(!day)return;
+      if(Object.keys(appData.itinerary).length<=1){await confirmInApp('至少保留一天行程。',{title:'行程提醒',accept:'知道了',notice:true});return;}
+      if(!await confirmInApp('確定刪除目前這一天與其所有景點紀錄？'))return;
+      const key=Object.keys(appData.itinerary).find(k=>appData.itinerary[k]===day);
+      if(key===undefined||Object.keys(appData.itinerary).length<=1)return;
+      delete appData.itinerary[key];const next={};
+      Object.keys(appData.itinerary).map(Number).sort((a,b)=>a-b).forEach((k,i)=>next[i+1]=appData.itinerary[k]);
+      appData.itinerary=next;currentTripDay=1;saveData();switchDay(1);
+    }
     async function addSpot(day){ const name=await askText('新增景點／商店','顯示名稱',''); if(!name?.trim())return; const desc=await askText('新增景點／商店','說明（可留空）',''); if(desc===null)return; const mapQuery=await askText('設定地圖位置','Google 地圖搜尋位置／地址',name.trim()); if(mapQuery===null)return; appData.itinerary[day].spots.push({name:name.trim(),desc:desc.trim(),mapQuery:mapQuery.trim()||name.trim(),visited:false,records:[]});saveData();switchDay(day);}
     async function editSpot(day,i){const sp=appData.itinerary[day].spots[i];const n=await askText('編輯景點／商店','顯示名稱',sp.name);if(n===null)return;const d=await askText('編輯景點／商店','說明',sp.desc||'');if(d===null)return;const q=await askText('設定地圖位置','Google 地圖搜尋位置／地址',sp.mapQuery||sp.name);if(q===null)return;sp.name=n.trim()||sp.name;sp.desc=d.trim();sp.mapQuery=q.trim()||sp.name;saveData();switchDay(day);}
     function toggleVisited(day,i){const sp=appData.itinerary[day].spots[i];sp.visited=!sp.visited;saveData();switchDay(day);}
-    function deleteSpot(day,i){if(confirm('刪除此景點與其紀錄？')){appData.itinerary[day].spots.splice(i,1);saveData();switchDay(day);}}
+    async function deleteSpot(day,i){
+      const dayData=appData.itinerary[day],spot=dayData?.spots[i];
+      if(!spot||!await confirmInApp('刪除此景點與其紀錄？'))return;
+      if(appData.itinerary[day]!==dayData)return;
+      const index=dayData.spots.indexOf(spot);if(index<0)return;
+      dayData.spots.splice(index,1);saveData();switchDay(day);
+    }
     async function addSpotRecord(day,i,text=''){const v=text||await askText('新增紀錄','已造訪／購物／備註紀錄','');if(!v?.trim())return;appData.itinerary[day].spots[i].records.push(v.trim());saveData();switchDay(day);}
     async function editSpotRecord(day,i,r){const sp=appData.itinerary[day].spots[i],v=await askText('修改紀錄','紀錄內容',sp.records[r]);if(v!==null&&v.trim()){sp.records[r]=v.trim();saveData();switchDay(day);}}
     function deleteSpotRecord(day,i,r){appData.itinerary[day].spots[i].records.splice(r,1);saveData();switchDay(day);}
@@ -1125,12 +1188,11 @@
       renderShopping();
     }
 
-    function deleteShopItem(idx) {
-      if(confirm('確定要刪除此購物項目嗎？')) {
-        appData.shopping.splice(idx, 1);
-        saveData();
-        renderShopping();
-      }
+    async function deleteShopItem(idx){
+      const item=appData.shopping[idx];
+      if(!item||!await confirmInApp('確定要刪除此購物項目嗎？'))return;
+      const index=appData.shopping.indexOf(item);if(index<0)return;
+      appData.shopping.splice(index,1);saveData();renderShopping();
     }
 
     function showClerkModal(idx) {
@@ -1279,10 +1341,11 @@
       saveData(); closeModal('modal-expense'); renderExpenses();
     }
 
-    function deleteExpense(idx) {
-      if(confirm('確定要刪除此筆記帳紀錄嗎？')) {
-        appData.expenses.splice(idx, 1); saveData(); renderExpenses();
-      }
+    async function deleteExpense(idx){
+      const expense=appData.expenses[idx];
+      if(!expense||!await confirmInApp('確定要刪除此筆記帳紀錄嗎？'))return;
+      const index=appData.expenses.indexOf(expense);if(index<0)return;
+      appData.expenses.splice(index,1);saveData();renderExpenses();
     }
 
     // --- Offline receipt workflow ---
@@ -1435,7 +1498,7 @@
       if(!currentReceiptImage){ alert('請先拍攝或選擇收據照片。'); return; }
       const status=document.getElementById('receipt-status'),wrap=document.getElementById('ocr-progress-wrap'); wrap.style.display='block';
       const selected=document.getElementById('receipt-region')?.value || 'auto';
-      status.innerHTML='🔎 正在辨識收據。7.8.3 正在整理完整金額、商品明細與付款摘要。';
+      status.innerHTML='🔎 正在辨識收據。7.8.4 正在整理完整金額、商品明細與付款摘要。';
       try{
         let out, fallbackReason='';
         try{ out=await runPaddleOCR(currentReceiptImage); }
@@ -1510,7 +1573,7 @@
     }
 
 
-    // Receipt parser 7.8.3: retain source rows and check scoped summaries.
+    // Receipt parser 7.8.4: retain source rows and check scoped summaries.
     let lastReceiptStructure = null;
     function normalizeReceiptLine(raw){
       return String(raw??'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'')
@@ -1960,15 +2023,35 @@
       if(!note){note=document.createElement('div');row.appendChild(note);}
       const needsReview=!result.complete||result.source==='dictionary-ocr'||!!result.canonical||!!result.errorReason;
       note.className='translation-source receipt-translation-note'+(needsReview?' needs-review':'');
-      if(result.errorReason)note.textContent=(result.retained?'已保留先前翻譯。':'')+receiptTranslationError(result.errorReason);
+      if(result.errorReason)note.textContent=(result.retained?'已保留商品譯名。':'')+receiptTranslationError(result.errorReason);
+      else if(result.qualityDecision==='glossary')note.textContent='已重新查詢，採用商品詞庫的完整譯名。';
+      else if(result.qualityDecision==='keep-previous')note.textContent='新譯名與原譯不同，已先保留原譯；可展開其他譯名選用。';
       else if(result.source==='dictionary-ocr')note.textContent='依近似字對照「'+result.canonical+'」；收據原文仍保留，請核對。';
-      else if(result.source==='manual')note.textContent='已保留妳手動修改的中文品名。';
+      else if(result.source==='manual')note.textContent='已保留妳確認的中文品名。';
       else if(result.source==='online')note.textContent='已完成本次網路翻譯，請對照商品核對。';
       else if(result.source==='cache')note.textContent='沿用先前網路翻譯；按「重新翻譯全部」可重新查詢。';
       else note.textContent=result.complete?'常用品項詞庫對照。':'完整品名待確認，原文已保留。';
-      if(result.canonical&&result.source!=='dictionary-ocr')note.textContent+=' 原文可能是「'+result.canonical+'」，請核對。';
+      if(result.canonical&&(result.qualityDecision||result.source!=='dictionary-ocr'))note.textContent+=' 原文可能是「'+result.canonical+'」，請核對。';
       row.classList.toggle('ocr-low-confidence',needsReview||row.dataset.ocrLow==='1');
       sizeReceiptNameField(row.querySelector('.receipt-cn'));
+      showReceiptTranslationAlternative(row,result);
+    }
+    function showReceiptTranslationAlternative(row,result){
+      row.querySelector('.receipt-translation-alternative')?.remove();
+      if(!result.alternative)return;
+      const jp=row.querySelector('.receipt-jp'),cn=row.querySelector('.receipt-cn');
+      const source=jp.value,chosen=cn.value;
+      const box=document.createElement('details');box.className='receipt-translation-alternative';
+      const summary=document.createElement('summary');summary.textContent='查看其他譯名';
+      const text=document.createElement('p');text.textContent=result.alternative;
+      const button=document.createElement('button');button.type='button';button.className='btn btn-outline';button.textContent='採用這個譯名';
+      button.addEventListener('click',()=>{
+        if(!row.isConnected||jp.value!==source||cn.value!==chosen){box.remove();return;}
+        cn.value=result.alternative;cn.dataset.manual='1';
+        row.dataset.translationComplete='1';row.dataset.translationSource='manual';
+        showReceiptRowTranslation(row,{text:cn.value,complete:true,source:'manual'});
+      });
+      box.append(summary,text,button);row.appendChild(box);
     }
     async function translateReceiptRow(row,force=false,job=null){
       const jpInput=row?.querySelector('.receipt-jp'),cnInput=row?.querySelector('.receipt-cn');
@@ -1982,13 +2065,13 @@
       const prior={text:cnInput.value,complete:row.dataset.translationComplete==='1',source:row.dataset.translationSource||''};
       row.setAttribute('aria-busy','true');cnInput.placeholder='翻譯中…';
       let result;
-      try{result=await translateReceiptNameDetailed(src,{force,signal:job?.controller?.signal});}
+      try{result=await translateReceiptNameDetailed(src,{force,signal:job?.controller?.signal,previous:prior});}
       catch(e){result={text:'中文品名待確認',complete:false,source:'failed',errorReason:'unexpected'};}
       const stale=revision!==receiptDocumentRevision||job?.cancelled||row.dataset.translationRequest!==String(request)||sanitizeReceiptProductName(jpInput.value)!==src||!row.isConnected;
-      if(stale){if(row.dataset.translationRequest===String(request)){row.removeAttribute('aria-busy');cnInput.placeholder='中文對照';}return {complete:false,source:'stale',onlineAttempted:!!result.onlineAttempted};}
+      if(stale){if(row.dataset.translationRequest===String(request)){row.removeAttribute('aria-busy');cnInput.placeholder='中文對照';}return {complete:false,source:'stale',onlineAttempted:!!result.onlineAttempted,onlineReceived:!!result.onlineReceived};}
       row.removeAttribute('aria-busy');cnInput.placeholder='中文對照';
-      if(cnInput.dataset.manual==='1'&&cnInput.value.trim())return {complete:true,source:'manual',onlineAttempted:!!result.onlineAttempted};
-      if((result.errorReason||!result.complete)&&prior.complete&&prior.text)result={...prior,retained:true,errorReason:result.errorReason||'invalid',onlineAttempted:!!result.onlineAttempted,canonical:result.canonical||''};
+      if(cnInput.dataset.manual==='1'&&cnInput.value.trim())return {complete:true,source:'manual',onlineAttempted:!!result.onlineAttempted,onlineReceived:!!result.onlineReceived};
+      if((result.errorReason||!result.complete)&&prior.complete&&prior.text&&!localReceiptTranslation(src).complete)result={...prior,retained:true,errorReason:result.errorReason||'invalid',onlineAttempted:!!result.onlineAttempted,onlineReceived:!!result.onlineReceived,canonical:result.canonical||''};
       cnInput.value=result.text;cnInput.dataset.auto='1';
       row.dataset.translationComplete=result.complete?'1':'0';row.dataset.translationSource=result.source||'';
       result.updated=result.text!==prior.text;showReceiptRowTranslation(row,result);return result;
@@ -2021,7 +2104,9 @@
           if(job.cancelled)return {completed:0,failed:0,cancelled:true};
           const failed=results.filter(x=>!x.complete||x.errorReason).length;
           const dictionary=results.filter(x=>!x.errorReason&&(x.source?.startsWith('dictionary')||x.source==='store-suffix')).length;
-          const online=results.filter(x=>!x.errorReason&&x.source==='online').length;
+          const responses=results.filter(x=>x.onlineReceived).length;
+          const glossary=results.filter(x=>x.qualityDecision==='glossary').length;
+          const alternatives=results.filter(x=>x.alternative).length;
           const cached=results.filter(x=>!x.errorReason&&x.source==='cache').length;
           const requests=results.filter(x=>x.onlineAttempted).length;
           const updated=results.filter(x=>x.updated&&!x.errorReason).length;
@@ -2031,11 +2116,11 @@
           const suggestions=results.filter(x=>x.source==='dictionary-ocr'||x.canonical).length;
           const reasons=[...new Set(results.filter(x=>x.errorReason).map(x=>receiptTranslationError(x.errorReason)))];
           const stamp=new Date().toLocaleTimeString('zh-TW',{hour12:false});
-          const summary=`${prefix}${failed?'結束':'完成'}（${stamp}）：已處理 ${rows.length} 筆，更新 ${updated} 筆、結果相同 ${unchanged} 筆${manual?'、保留手動修改 '+manual+' 筆':''}。本次連網 ${requests} 筆，成功 ${online} 筆${dictionary?'；詞庫 '+dictionary+' 筆':''}${cached?'；沿用先前網路翻譯 '+cached+' 筆':''}${suggestions?'；'+suggestions+' 筆原文近似字請核對':''}${failed?'；'+failed+' 筆未能完成更新':''}${retained?'，已保留 '+retained+' 筆既有品名':''}。`;
+          const summary=`${prefix}${failed?'結束':'完成'}（${stamp}）：更新 ${updated} 筆、保留 ${unchanged} 筆${manual?'、保留手動修改 '+manual+' 筆':''}。本次連網查詢 ${requests} 筆，收到回覆 ${responses} 筆${glossary?'；'+glossary+' 筆採用商品詞庫譯名':dictionary?'；詞庫 '+dictionary+' 筆':''}${alternatives?'；'+alternatives+' 筆其他譯名可展開選用':''}${cached?'；沿用先前網路翻譯 '+cached+' 筆':''}${suggestions?'；'+suggestions+' 筆原文近似字請核對':''}${failed?'；'+failed+' 筆未能完成查詢':''}${retained?'，已保留商品譯名':''}。`;
           await new Promise(resolve=>setTimeout(resolve,Math.max(0,500-(Date.now()-started))));
           if(job.cancelled)return {completed:0,failed:0,cancelled:true};
           showReceiptTranslationFeedback(summary+(reasons.length?' '+reasons.join(' '):''));
-          return {completed:rows.length-failed,failed,requests,updated,unchanged,manual};
+          return {completed:rows.length-failed,failed,requests,updated,unchanged,manual,glossary,alternatives};
         }catch(e){
           if(!job.cancelled)showReceiptTranslationFeedback('本次翻譯未完成，原有資料已保留；請稍後再試。');
           return {completed:results.length,failed:rows.length-results.length};
@@ -2091,6 +2176,7 @@
       jpInput.addEventListener('change',()=>{ if(region==='jp') translateReceiptRow(row,false); });
       cnInput.addEventListener('input',e=>{
         cnInput.dataset.manual=cnInput.value.trim()?'1':'0';row.dataset.translationComplete=cnInput.value.trim()?'1':'0';row.dataset.translationSource='manual';sizeReceiptNameField(cnInput);
+        showReceiptRowTranslation(row,{text:cnInput.value,complete:!!cnInput.value.trim(),source:'manual'});
       });
       amtInput.addEventListener('input',()=>{ if(roleSel.value==='discount' && Number(amtInput.value)>0) amtInput.value=-Math.abs(Number(amtInput.value)); updateReceiptTotals(); });
       row.querySelector('.receipt-remove').onclick=()=>{ row.remove(); updateReceiptTotals(); };
@@ -2146,7 +2232,7 @@
         nameCn:pairs.map(x=>x.cn).filter(Boolean).join('、')||merchantCn||'收據消費',jpy:paid,amount:paid,receiptTotal:total,
         payment:document.getElementById('receipt-payment').value,date:new Date().toISOString().slice(0,10),receiptImage:currentReceiptImage,
         merchantJp,merchantCn,receiptItems:pairs,receiptRegion:region,receiptCurrency:region==='tw'?'TWD':'JPY',receiptSummaryOnly:summaryOnly,
-        receiptStructure:p?{parserVersion:'7.8.3',type:p.type.code,total,paid,tax:p.taxSum,includedTax:p.includedTaxSum,paymentAdjustment:p.payAdjust,
+        receiptStructure:p?{parserVersion:'7.8.4',type:p.type.code,total,paid,tax:p.taxSum,includedTax:p.includedTaxSum,paymentAdjustment:p.payAdjust,
           paymentAdjustments:p.payAdjustRows,verification:summaryOnly?'summary_only':p.fullVerified?'matched':'unverified',paidSource:p.paidSource,
           rawText:document.getElementById('ocr-raw-text').value}:null});
       saveData();closeModal('modal-receipt');renderExpenses();
@@ -2275,6 +2361,50 @@
         el.innerHTML+='<div class="ocr-warn" style="margin-top:8px;font-weight:700;">! 目前不是 https:// 網址，因此不執行麥克風實測。這不是 Chrome「應用程式權限」開關的問題。</div>';
       }
     }
+
+    // --- App confirmation dialog: no browser-provided site-name heading. ---
+    let appConfirmState=null;
+    function confirmInApp(message,{title='確認刪除',accept='確定刪除',notice=false}={}){
+      // Ignore a duplicate tap while the existing question is still open.
+      if(appConfirmState)return Promise.resolve(false);
+      const modal=document.getElementById('app-confirm-modal');
+      return new Promise(resolve=>{
+        const previousFocus=document.activeElement;
+        const background=[...document.body.children].filter(el=>el!==modal&&el.tagName!=='SCRIPT').map(el=>({el,inert:el.hasAttribute('inert')}));
+        appConfirmState={resolve,previousFocus,background,overflow:document.body.style.overflow};
+        document.getElementById('app-confirm-title').textContent=title;
+        document.getElementById('app-confirm-message').textContent=message;
+        const cancel=document.getElementById('app-confirm-cancel'),ok=document.getElementById('app-confirm-accept');
+        cancel.hidden=notice;ok.textContent=accept;
+        background.forEach(({el})=>el.setAttribute('inert',''));
+        document.body.style.overflow='hidden';modal.hidden=false;modal.classList.add('active');
+        (notice?ok:cancel).focus();
+      });
+    }
+    function finishAppConfirmation(accepted){
+      const state=appConfirmState;if(!state)return;
+      appConfirmState=null;
+      const modal=document.getElementById('app-confirm-modal');modal.classList.remove('active');modal.hidden=true;
+      state.background.forEach(({el,inert})=>{if(!inert)el.removeAttribute('inert');});
+      document.body.style.overflow=state.overflow||'';
+      if(state.previousFocus?.isConnected)state.previousFocus.focus({preventScroll:true});
+      state.resolve(accepted);
+    }
+    document.getElementById('app-confirm-cancel').addEventListener('click',()=>finishAppConfirmation(false));
+    document.getElementById('app-confirm-accept').addEventListener('click',()=>finishAppConfirmation(true));
+    document.getElementById('app-confirm-modal').addEventListener('click',event=>{
+      if(event.target===event.currentTarget)finishAppConfirmation(false);
+    });
+    document.addEventListener('keydown',event=>{
+      if(!appConfirmState)return;
+      if(event.key==='Escape'){event.preventDefault();event.stopPropagation();finishAppConfirmation(false);return;}
+      if(event.key==='Tab'){
+        const buttons=[document.getElementById('app-confirm-cancel'),document.getElementById('app-confirm-accept')].filter(el=>!el.hidden);
+        const current=buttons.indexOf(document.activeElement);
+        if(event.shiftKey&&current<=0){event.preventDefault();buttons.at(-1).focus();}
+        else if(!event.shiftKey&&(current<0||current===buttons.length-1)){event.preventDefault();buttons[0].focus();}
+      }
+    },true);
 
     // --- Modal Helper ---
     function closeModal(modalId) {
