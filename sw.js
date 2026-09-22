@@ -1,6 +1,6 @@
-// 7.8.1: refresh the app shell from the network; preserve offline use and local user data.
+// 7.8.2: refresh the app shell from the network; preserve offline use and local user data.
 const SCOPE = self.registration.scope;
-const CACHE = 'hokkaido-pwa-v7.8.1-' + new URL(SCOPE).pathname;
+const CACHE = 'hokkaido-pwa-v7.8.2-' + new URL(SCOPE).pathname;
 const CORE = ['./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'];
 const INDEX = new URL('./index.html',SCOPE).href;
 self.addEventListener('install',event=>{

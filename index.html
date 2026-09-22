@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>【測試版 7.8.1】旅行助手｜收據品項與翻譯修正版</title>
+  <title>【測試版 7.8.2】旅行助手｜收據品項與翻譯修正版</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -488,7 +488,7 @@
       </div>
       <img id="receipt-preview" class="receipt-preview" alt="收據照片">
       <div id="receipt-status" class="offline-note"></div>
-      <div id="ocr-engine-note" class="feature-hint">收據解析 7.8.1｜核對商品、費用小計與實付；翻譯進度和待確認原因會直接顯示。</div>
+      <div id="ocr-engine-note" class="feature-hint">收據解析 7.8.2｜核對商品、費用小計與實付；翻譯進度和待確認原因會直接顯示。</div>
       <details style="margin-top:8px">
         <summary style="font-size:.78rem;color:#667085;cursor:pointer;">查看 OCR 原始辨識文字</summary>
         <textarea id="ocr-raw-text" class="input-control" rows="6" style="margin-top:6px;font-size:.72rem;" placeholder="OCR 原始文字會顯示在這裡"></textarea>
@@ -683,7 +683,6 @@
         .replace(/遠距離\s*割引/g,'遠距離割引')
         .replace(/ETC\s*料金/gi,'ETC料金')
         .replace(/手巻\s*おにぎり/g,'手巻おにぎり')
-        .replace(/パラウ(?=\s*ミニネイル)/g,'パラドゥ')
         .replace(/\s{2,}/g,' ')
         .trim();
     }
@@ -697,6 +696,11 @@
       const src=sanitizeReceiptProductName(text);
       if(!src)return {text:'',complete:false,source:'empty'};
       if(jpToCn[src])return {text:jpToCn[src],complete:true,source:'dictionary'};
+      if(/^パラ[ウゥ]\s*ミニネイル(?=\s|$)/.test(src)){
+        const canonical=src.replace(/^パラ[ウゥ]/,'パラドゥ');
+        const known=localReceiptTranslation(canonical);
+        if(known.complete)return {...known,source:'dictionary-ocr',review:true,canonical};
+      }
       // Only known glyph substitutions and a unique kana-diacritic match are suggested.
       // The editable receipt text is never replaced by a suggested dictionary spelling.
       const aliases={'メとビウスワン':'メビウスワン'};
@@ -925,7 +929,7 @@
         }
       }
       const h=document.getElementById('app-trip-heading'); if(h)h.textContent=`${title}${keys.length?'・'+keys.length+'日':''}${range}`;
-      document.title=`${title}｜旅行助手 7.8.1`;
+      document.title=`${title}｜旅行助手 7.8.2`;
     }
     function renderDayTabs(){
       ensureTripSchema();
@@ -1400,7 +1404,7 @@
       if(!currentReceiptImage){ alert('請先拍攝或選擇收據照片。'); return; }
       const status=document.getElementById('receipt-status'),wrap=document.getElementById('ocr-progress-wrap'); wrap.style.display='block';
       const selected=document.getElementById('receipt-region')?.value || 'auto';
-      status.innerHTML='🔎 正在辨識收據。7.8.1 正在整理完整金額、商品明細與付款摘要。';
+      status.innerHTML='🔎 正在辨識收據。7.8.2 正在整理完整金額、商品明細與付款摘要。';
       try{
         let out, fallbackReason='';
         try{ out=await runPaddleOCR(currentReceiptImage); }
@@ -1475,7 +1479,7 @@
     }
 
 
-    // Receipt parser 7.8.1: retain source rows and check scoped summaries.
+    // Receipt parser 7.8.2: retain source rows and check scoped summaries.
     let lastReceiptStructure = null;
     function normalizeReceiptLine(raw){
       return String(raw??'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'')
@@ -1488,6 +1492,7 @@
       return compactReceiptLine(raw).replace(/內/g,'内').replace(/稅/g,'税').replace(/總/g,'総')
         .replace(/費|费/g,'費').replace(/対|對|对/g,'対').replace(/還|还/g,'還').replace(/額|额/g,'額')
         .replace(/赁/g,'賃').replace(/运/g,'運')
+        .replace(/(\d+(?:[.,]\d+)?%)0FF/gi,'$1OFF')
         .replace(/殘/g,'残').replace(/払|拂/g,'払').replace(/专|專/g,'専')
         .replace(/^(?:合言[十+]|合計[十+]|合计[十+]?)/,'合計')
         .replace(/^税合言[十+]/,'税合計').replace(/计/g,'計')
@@ -1558,14 +1563,59 @@
       }
       return rows.sort((a,b)=>a.cy-b.cy).map(r=>({raw:r.parts.sort((a,b)=>a.x-b.x).map(x=>x.text).join('    '),confidence:Math.min(...r.parts.map(x=>x.score)),parts:r.parts}));
     }
+    function resolveMixedReceiptSummaryRows(rows,region){
+      const printedTotals=rows.filter(r=>['total','settlement'].includes(classifyReceiptLine(r.raw,0)))
+        .map(r=>receiptAmountToken(r.raw,region)?.amount).filter(n=>n!==undefined&&n!==null);
+      const result=[];
+      for(let i=0;i<rows.length;i++){
+        const row=rows[i];
+        if(classifyReceiptLine(row.raw,0)!=='summary_mixed'){result.push(row);continue;}
+        const taxLabel=/(?:[（(]\s*)?(?:(?:内|內)\s*)?(?:消\s*[費费]\s*[税稅](?:\s*等)?|[税稅]\s*(?:額|额))/.exec(row.raw);
+        const money=[...row.raw.matchAll(/[¥$]\s*[+-]?\s*\d[\d\s,.]*(?:円|元)?[軽非込]?[)）]?/g)]
+          .map(m=>({token:receiptAmountToken(m[0],region),start:m.index})).filter(x=>x.token);
+        if(!taxLabel||!money.length){result.push(row);continue;}
+        const before=money.filter(m=>m.start<taxLabel.index),after=money.filter(m=>m.start>=taxLabel.index);
+        let totalToken=null,taxToken=null,nextUsed=false;
+        // Unambiguous inline sequence: total label, total price, tax label, tax price.
+        if(money.length<=2&&before.length===1&&after.length<=1){
+          totalToken=before[0].token;taxToken=after[0]?.token||null;
+        }else if(money.length<=2&&before.length===0){
+          // OCR may merge the total/tax labels vertically. Require a separately
+          // printed matching total/settlement before assigning its price.
+          const matching=money.filter(m=>m.token.amount>0&&printedTotals.includes(m.token.amount));
+          if(matching.length===1){
+            totalToken=matching[0].token;
+            const other=money.find(m=>m!==matching[0]);
+            if(other&&other.token.amount>=0&&other.token.amount<=totalToken.amount*.11)taxToken=other.token;
+            else if(other)totalToken=null;
+          }
+        }
+        if(totalToken&&!taxToken&&money.length===1&&rows[i+1]){
+          const next=receiptAmountToken(rows[i+1].raw,region);
+          if(next&&next.name===''&&next.marked&&next.amount>=0&&next.amount<=Math.max(0,totalToken.amount*.11)){
+            taxToken=next;nextUsed=true;
+          }
+        }
+        if(!totalToken){result.push(row);continue;}
+        const sources=[row.raw,...(nextUsed?[rows[i+1].raw]:[])];
+        const reason='合計與稅額標籤同列，已依金額位置或另一筆印出的應付金額拆開。';
+        result.push({...row,raw:'合計 '+totalToken.rawToken,sources,repairedLayout:true,reason});
+        if(taxToken)result.push({...row,raw:'内消費税等 '+taxToken.rawToken,sources,repairedLayout:true,reason});
+        else result.push({...row,raw:taxLabel[0].trim(),sources,repairedLayout:true,reason:'這列稅額尚未讀到。'});
+        if(nextUsed)i++;
+      }
+      return result;
+    }
+
     function prepareReceiptRows(text,ocrItems=[],region='jp'){
       const hasGeometry=ocrItems.length>0&&ocrItems.some(x=>x.poly?.length||Number(x.h)>0&&Number(x.y)>0);
       let rows=hasGeometry?groupReceiptOCRItems(ocrItems):String(text||'').split(/\n+/).map(raw=>({raw,confidence:null}));
       rows=rows.map(r=>({...r,raw:normalizeSpacedMoney(r.raw)})).filter(r=>r.raw);
+      rows=resolveMixedReceiptSummaryRows(rows,region);
       const result=[];
       const firstSummary=rows.findIndex((r,i)=>['total','subtotal','settlement','payment'].includes(classifyReceiptLine(r.raw,i)));
       for(let i=0;i<rows.length;i++){
-        let r={...rows[i],sources:[rows[i].raw]};
+        let r={...rows[i],sources:rows[i].sources||[rows[i].raw]};
         const role=classifyReceiptLine(r.raw,i,-1),next=rows[i+1];
         // A label may be on its own line, but never borrow another label's amount.
         const productLabel=role==='unknown'&&(firstSummary<0||i<firstSummary)&&/[ぁ-んァ-ヶ]/.test(r.raw)&&!/[\d¥$]$/.test(r.raw);
@@ -1606,13 +1656,15 @@
       if(/免税対象|TAXFREE対象|免税購入額/i.test(c)) return 'tax_free_basis';
       if(/還元対象|還元基準|(?:8|10)%対象|課税対象|内税対象|税込対象|税抜対象/.test(c)) return 'tax_meta';
       if(/免税額|免税値引|TAXFREE割引|消費税免税/i.test(c)) return 'tax_free_discount';
+      // Mixed total/tax labels are a layout ambiguity, never a single tax fact.
+      if(/^(?:合計|総合計|総計|総額|TOTAL|GRANDTOTAL)/i.test(c)&&/消費税|内税|税額/.test(c))return 'summary_mixed';
       // Tax totals must be resolved before generic totals.
       if(/内.*消費税|内税|税合計|税総額|税込税額/.test(c)) return 'tax_included';
       if(/消費税|税額|外税|營業税/.test(c)) return 'tax';
       if(/^(?:小計|商品小計|料金計|運賃料金計|SUBTOTAL)|^(?:税抜|非課税)/i.test(c)) return 'subtotal';
       if(/^(?:合計|総合計|総計|総額|總額|お会計|TOTAL|GRANDTOTAL)/i.test(c)) return 'total';
       if(/還元|回饋|ポイント利用|利用ポイント/.test(c)) return 'rebate';
-      if(/割引|値引|クーポン|ディスカウント|OFF|割戻|折扣|折價|折讓|優惠券/i.test(c)) return 'discount';
+      if(/割引|値引|クーポン|ディスカウント|割戻|折扣|折價|折讓|優惠券/i.test(c)||/(?:^|[^A-Z])OFF(?:$|[^A-Z])/i.test(c+' '+s)) return 'discount';
       if(/残高|餘額/.test(c)) return 'balance';
       if(/お釣|釣銭|找零/.test(c)) return 'change';
       if(/お預|預り|お預かり|收現/.test(c)) return 'tender';
@@ -1693,6 +1745,9 @@
       const total=totalRow?.amount??null;
       const boundary=structured.find(r=>['total','subtotal','settlement','payment'].includes(r.role))?.index??Infinity;
       const candidates=[],unresolved=[],issues=[],intermediateChecks=[];
+      for(const r of structured.filter(x=>x.role==='summary_mixed')){
+        r.role='unresolved';r.reason='合計與稅額標示混在同列，金額尚未能分配；請核對原文。';unresolved.push(r);
+      }
       if(new Set(totals.map(r=>r.amount)).size>1)issues.push('辨識到不同的合計金額，請核對付款區塊。');
       for(const r of structured){
         if(!['unknown','add','discount','rebate','tax_free_discount'].includes(r.role))continue;
@@ -1755,7 +1810,13 @@
       const ext=dedupeReceiptTax(external),inc=dedupeReceiptTax(included);
       let taxSum=ext.sum??0,includedTaxSum=inc.sum;
       if(ext.conflict||inc.conflict)issues.push('稅額摘要彼此不一致，暫不合併稅額。');
-      if(includedTaxSum!==null&&total!==null&&includedTaxSum>total*.11){issues.push('內含稅額與合計比例異常，請核對稅額所在列。');includedTaxSum=null;}
+      const settlementBounds=structured.filter(r=>r.role==='settlement'&&r.amount!==null&&r.amount>=0).map(r=>r.amount);
+      const paymentBounds=structured.filter(r=>r.role==='payment'&&r.amount!==null&&r.amount>=0).map(r=>r.amount);
+      const paymentBound=paymentBounds.length?paymentBounds.reduce((a,b)=>a+b,0)+payAdjustRows.reduce((a,r)=>a+Math.abs(r.amount),0):null;
+      const taxReference=total??(settlementBounds.length?Math.max(...settlementBounds):paymentBound);
+      if(includedTaxSum!==null&&taxReference!==null&&includedTaxSum>taxReference*.11){
+        issues.push('內含稅額與收據金額比例異常，可能讀到合計；稅額已改列待確認。');includedTaxSum=null;
+      }
       const payAdjust=payAdjustRows.reduce((a,r)=>a+r.amount,0);
       const payments=structured.filter(r=>r.role==='payment'&&r.amount!==null),generic=structured.filter(r=>r.role==='settlement'&&r.amount!==null);
       let paymentRow=payments.at(-1)||null,paid=null,paidSource='missing',payment='unknown';
@@ -1795,15 +1856,15 @@
       if(p.hasIncludedTax)rows.push(`<div class="section muted">內含稅：${fmt(p.includedTaxSum)}（已含在合計內；重複摘要只計一次）</div>`);
       rows.push(`<div class="section">收據合計：<b>${fmt(p.total)}</b></div>`);
       if(p.totalSource==='settlement_discount')rows.push('<div class="section muted">合計參考收據「お支払い」金額，已與結帳折扣、刷卡實付交叉核對。</div>');
-      for(const r of p.payAdjustRows)rows.push(`<div class="section">${/OFF|割引|値引/i.test(r.raw)?'結帳折扣':'回饋／付款折抵'}：<b>${fmt(r.amount)}</b></div>`);
+      for(const r of p.payAdjustRows)rows.push(`<div class="section">${/OFF|割引|値引/i.test(receiptSemanticKey(r.raw))?'結帳折扣':'回饋／付款折抵'}：<b>${fmt(r.amount)}</b></div>`);
       rows.push(`<div class="section">實際付款：<b>${fmt(p.paid)}</b>${p.paidSource==='derived'?'（依合計與折抵計算，未讀到獨立付款列）':''}</div>`);
-      if(p.fullVerified)rows.push('<div class="section ok">✅ 商品明細、收據合計與付款關係均吻合。</div>');
+      if(p.fullVerified)rows.push('<div class="section ok">✅ 商品金額、收據合計與實付均吻合；品名請依各列提示核對。</div>');
       else if(p.paymentVerified)rows.push(`<div class="section">付款關係吻合：${fmt(p.total)}${p.payAdjust?' − '+fmt(Math.abs(p.payAdjust)):''} = ${fmt(p.paid)}。${p.detailMissing?'商品明細仍缺失。':'商品明細仍需核對。'}</div>`);
       for(const warning of p.issues)rows.push(`<div class="section warn">⚠️ ${escapeHtml(warning)}</div>`);
       for(const check of p.intermediateChecks||[])rows.push(`<div class="section muted">${escapeHtml(check.message)} ${fmt(check.amount)}</div>`);
       if(p.unresolved.length)rows.push(`<div class="section warn">⚠️ ${p.unresolved.length} 列尚未確認用途，未加入商品加總。</div>`);
-      for(const r of p.unresolved)rows.push(`<div class="section receipt-unresolved">待確認原文：${escapeHtml(r.raw)}<br>${escapeHtml(r.reason||'尚未確認這列是商品或收據說明，暫未計入加總。')}</div>`);
-      rows.push('<details style="margin-top:8px"><summary>查看原文與分類依據</summary>'+p.structured.map(r=>`<div class="section" style="overflow-wrap:anywhere"><b>${receiptRoleChinese(r.role)}</b> · ${escapeHtml(r.raw)}${r.reason?'<br>'+escapeHtml(r.reason):''}</div>`).join('')+'</details>');
+      for(const r of p.unresolved)rows.push(`<div class="section receipt-unresolved">待確認原文：${escapeHtml(r.raw)}<br>${escapeHtml(r.reason||(r.amount===0?'此列金額為 0，不影響實付；用途仍待確認。':'尚未確認這列是商品或收據說明，暫未計入加總。'))}</div>`);
+      rows.push('<details style="margin-top:8px"><summary>查看原文與分類依據</summary>'+p.structured.map(r=>`<div class="section" style="overflow-wrap:anywhere"><b>${receiptRoleChinese(r.role)}</b> · ${escapeHtml(r.raw)}${r.reason?'<br>'+escapeHtml(r.reason):''}${r.repairedLayout?'<br>原始辨識：'+escapeHtml(r.sources.join(' / ')):''}</div>`).join('')+'</details>');
       el.innerHTML=rows.join('');
     }
 
@@ -2009,7 +2070,7 @@
       const check=document.getElementById('receipt-sum-check');
       const ok=p?p.fullVerified:current.length>0&&total!==null&&paid!==null&&Math.abs(base-total)<.005&&Math.abs(total-paid)<.005;
       check.className='receipt-verify '+(ok?'ok':'warn');
-      if(ok)check.textContent=p?.taxSum?`✅ 品項 ${sym}${base.toLocaleString()} ＋ 外加稅 ${sym}${p.taxSum.toLocaleString()} ＝ 合計 ${sym}${total.toLocaleString()}；實付 ${sym}${paid.toLocaleString()}。`:'✅ 商品明細與付款金額均吻合。';
+      if(ok)check.textContent=p?.taxSum?`✅ 品項 ${sym}${base.toLocaleString()} ＋ 外加稅 ${sym}${p.taxSum.toLocaleString()} ＝ 合計 ${sym}${total.toLocaleString()}；實付 ${sym}${paid.toLocaleString()}。`:'✅ 商品金額與付款金額均吻合；品名請依各列提示核對。';
       else if(!current.length)check.textContent='⚠️ 尚未讀到商品明細，請確認照片包含商品名稱與價格；也可核對實付後只記總額。';
       else if(total===null)check.textContent='⚠️ 未讀到收據合計，請確認合計及實際付款。';
       else if(p?.itemMatch)check.textContent=p.unresolved.length?`⚠️ 金額相符，另有 ${p.unresolved.length} 列用途待確認，原文已列在下方。`:'⚠️ 商品金額相符，付款資料或其他欄位仍需確認。';
@@ -2039,7 +2100,7 @@
         nameCn:pairs.map(x=>x.cn).filter(Boolean).join('、')||merchantCn||'收據消費',jpy:paid,amount:paid,receiptTotal:total,
         payment:document.getElementById('receipt-payment').value,date:new Date().toISOString().slice(0,10),receiptImage:currentReceiptImage,
         receiptItems:pairs,receiptRegion:region,receiptCurrency:region==='tw'?'TWD':'JPY',receiptSummaryOnly:summaryOnly,
-        receiptStructure:p?{parserVersion:'7.8.1',type:p.type.code,total,paid,tax:p.taxSum,includedTax:p.includedTaxSum,paymentAdjustment:p.payAdjust,
+        receiptStructure:p?{parserVersion:'7.8.2',type:p.type.code,total,paid,tax:p.taxSum,includedTax:p.includedTaxSum,paymentAdjustment:p.payAdjust,
           paymentAdjustments:p.payAdjustRows,verification:summaryOnly?'summary_only':p.fullVerified?'matched':'unverified',paidSource:p.paidSource,
           rawText:document.getElementById('ocr-raw-text').value}:null});
       saveData();closeModal('modal-receipt');renderExpenses();
