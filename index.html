@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>【測試版 7.8.2】旅行助手｜收據品項與翻譯修正版</title>
+  <title>【測試版 7.8.3】旅行助手｜重新翻譯與付款明細修正版</title>
   <style>
     :root {
       --primary: #1e88e5;
@@ -279,20 +279,23 @@
       <!-- Balance Header -->
       <div class="balance-card">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span>日幣預算餘額</span>
+          <span>日幣現金餘額</span>
           <button style="background:rgba(255,255,255,0.2); border:none; color:white; padding:4px 8px; border-radius:4px; font-size:0.75rem;" onclick="setBudgetModal()">設定預算/匯率</button>
         </div>
         <div class="balance-val" id="disp-jpy-remain">¥0</div>
         <div class="balance-grid">
           <div>總兌換日幣: <span id="disp-jpy-total">¥0</span></div>
           <div>總支出日幣: <span id="disp-jpy-spent">¥0</span></div>
-          <div>即時匯率: <span id="disp-rate">0.215</span></div>
+          <div>設定匯率: <span id="disp-rate">0.215</span></div>
           <div>預估約合台幣: <span id="disp-twd-spent">NT$0</span></div>
         </div>
         <div class="pay-summary">
           <div class="pay-box">💵 現金支出<b id="disp-cash-spent">¥0</b><span id="disp-cash-twd">約 NT$0</span></div>
           <div class="pay-box">💳 信用卡支出<b id="disp-card-spent">¥0</b><span id="disp-card-twd">約 NT$0</span></div>
+          <div class="pay-box">📱 電子錢包／交通卡<b id="disp-electronic-spent">¥0</b><span id="disp-electronic-twd">約 NT$0</span></div>
+          <div class="pay-box" id="other-payment-summary" hidden>🧾 混合／待確認付款<b id="disp-other-spent">¥0</b><span id="disp-other-twd">約 NT$0</span></div>
         </div>
+        <div style="font-size:.72rem;margin-top:8px;line-height:1.5">現金餘額＝總兌換日幣－現金支出；總支出包含所有付款方式。</div>
       </div>
 
       <div class="card">
@@ -488,7 +491,7 @@
       </div>
       <img id="receipt-preview" class="receipt-preview" alt="收據照片">
       <div id="receipt-status" class="offline-note"></div>
-      <div id="ocr-engine-note" class="feature-hint">收據解析 7.8.2｜核對商品、費用小計與實付；翻譯進度和待確認原因會直接顯示。</div>
+      <div id="ocr-engine-note" class="feature-hint">收據解析 7.8.3｜核對商品、費用小計與實付；手動重譯會重新連網，顯示更新筆數與結果。</div>
       <details style="margin-top:8px">
         <summary style="font-size:.78rem;color:#667085;cursor:pointer;">查看 OCR 原始辨識文字</summary>
         <textarea id="ocr-raw-text" class="input-control" rows="6" style="margin-top:6px;font-size:.72rem;" placeholder="OCR 原始文字會顯示在這裡"></textarea>
@@ -509,6 +512,7 @@
         <button class="btn feature-btn" type="button" id="receipt-translate-button" aria-busy="false" onclick="translateAllReceiptRows(true)">🌐 重新翻譯全部</button>
       </div>
       <div id="receipt-translate-feedback" class="receipt-translate-feedback" role="status" aria-live="polite" hidden></div>
+      <div class="feature-hint">重新翻譯會連網重試所有自動翻譯品名，保留手動修改的中文。若原文漏字，請使用「重新 OCR」。</div>
       <div class="input-group">
         <label>店家／摘要（日文）</label>
         <input id="receipt-merchant-jp" class="input-control" placeholder="例: セイコーマート">
@@ -661,6 +665,7 @@
       '悠遊卡':'悠遊卡','載具':'電子發票載具','統編':'統一編號','稅額':'稅額'
     };
     Object.assign(jpToCn,{'オールドファッション':'老式甜甜圈','メロンパン':'菠蘿麵包（日式 Melon Pan）','たっぷりクリームデニ':'滿餡奶油丹麥麵包（收據縮寫）','たっぷりクリームデニー':'滿餡奶油丹麥麵包（收據縮寫）','汁なし担々麺':'乾拌擔擔麵','汁なし担担麺':'乾拌擔擔麵','キャッシュレス還元':'非現金付款回饋','TATSU':'TATSU 餐廳'});
+    Object.assign(jpToCn,{'汁なし坦々麺':'乾拌擔擔麵','汁なし担々麵':'乾拌擔擔麵','汁なし坦々麵':'乾拌擔擔麵','ベジ':'蔬菜','東都城東タクシー':'東都城東計程車','タクシー':'計程車','(株)':'（株式會社）','株式会社':'株式會社'});
     const cnToJp = Object.fromEntries(Object.entries(jpToCn).map(([jp,cn]) => [cn,jp]));
     function normalizeJpReceiptName(text){
       let s=String(text||'');
@@ -778,21 +783,24 @@
     async function translateReceiptNameDetailed(text,{force=false,signal}={}){
       const src=sanitizeReceiptProductName(text),local=localReceiptTranslation(src);
       if(!src)return {text:'',complete:false,source:'empty'};
-      if(local.complete)return local;
+      // A user-requested retry must reach the service, even for dictionary hits.
+      if(local.complete&&!force)return local;
       if(!force&&receiptTranslationCache[src]&&validOnlineReceiptTranslation(src,receiptTranslationCache[src]))return {text:receiptTranslationCache[src],complete:true,source:'cache',review:true};
-      let errorReason='offline';
+      let errorReason='offline',onlineAttempted=false;
       if(navigator.onLine!==false){
         try{
+          onlineAttempted=true;
           const online=await fetchReceiptTranslation(src,{signal});
           if(validOnlineReceiptTranslation(src,online)){
             receiptTranslationCache[src]=online;saveReceiptTranslationCache();
-            return {text:online,complete:true,source:'online',review:true};
+            return {text:online,complete:true,source:'online',review:true,onlineAttempted:true,canonical:local.canonical||''};
           }
           errorReason='invalid';
         }catch(e){errorReason=e.reason||'network';}
       }
+      if(local.complete)return {...local,retained:true,errorReason,onlineAttempted};
       const category=receiptTranslationFallback(src);
-      return {text:category?category+'（完整品名待確認）':'中文品名待確認',complete:false,source:category?'category':'failed',errorReason,message:receiptTranslationError(errorReason)};
+      return {text:category?category+'（完整品名待確認）':'中文品名待確認',complete:false,source:category?'category':'failed',errorReason,onlineAttempted,message:receiptTranslationError(errorReason)};
     }
 
     async function translateJpToCnOnline(text,force=false){
@@ -929,7 +937,7 @@
         }
       }
       const h=document.getElementById('app-trip-heading'); if(h)h.textContent=`${title}${keys.length?'・'+keys.length+'日':''}${range}`;
-      document.title=`${title}｜旅行助手 7.8.2`;
+      document.title=`${title}｜旅行助手 7.8.3`;
     }
     function renderDayTabs(){
       ensureTripSchema();
@@ -1139,6 +1147,8 @@
       const spentJpy = appData.expenses.filter(e=>e.receiptCurrency!=='TWD').reduce((sum, e) => sum + Number(e.jpy || 0), 0);
       const cashJpy = appData.expenses.filter(e => e.receiptCurrency!=='TWD' && (e.payment || 'cash') === 'cash').reduce((s,e)=>s+Number(e.jpy||0),0);
       const cardJpy = appData.expenses.filter(e => e.receiptCurrency!=='TWD' && e.payment === 'card').reduce((s,e)=>s+Number(e.jpy||0),0);
+      const electronicJpy = appData.expenses.filter(e=>e.receiptCurrency!=='TWD' && e.payment==='electronic').reduce((s,e)=>s+Number(e.jpy||0),0);
+      const otherJpy = appData.expenses.filter(e=>e.receiptCurrency!=='TWD' && !['cash','card','electronic'].includes(e.payment||'cash')).reduce((s,e)=>s+Number(e.jpy||0),0);
       const remainJpy = appData.budget.totalJpy - cashJpy;
 
       document.getElementById('disp-jpy-remain').innerText = `¥${remainJpy.toLocaleString()}`;
@@ -1150,6 +1160,11 @@
       document.getElementById('disp-card-spent').innerText = `¥${cardJpy.toLocaleString()}`;
       document.getElementById('disp-cash-twd').innerText = `約 NT$${Math.round(cashJpy*rate).toLocaleString()}`;
       document.getElementById('disp-card-twd').innerText = `約 NT$${Math.round(cardJpy*rate).toLocaleString()}`;
+      document.getElementById('disp-electronic-spent').innerText = `¥${electronicJpy.toLocaleString()}`;
+      document.getElementById('disp-electronic-twd').innerText = `約 NT$${Math.round(electronicJpy*rate).toLocaleString()}`;
+      document.getElementById('disp-other-spent').innerText = `¥${otherJpy.toLocaleString()}`;
+      document.getElementById('disp-other-twd').innerText = `約 NT$${Math.round(otherJpy*rate).toLocaleString()}`;
+      document.getElementById('other-payment-summary').hidden = otherJpy===0;
 
       const container = document.getElementById('expense-container');
       container.innerHTML = '';
@@ -1167,6 +1182,7 @@
         div.className = 'expense-row';
         div.innerHTML = `
           <div style="flex:1;min-width:0;">
+            ${exp.merchantCn||exp.merchantJp?`<div style="font-weight:700;margin-bottom:6px;">${escapeHtml(exp.merchantCn||exp.merchantJp)}</div>`:''}
             <div class="bilingual">
               ${exp.receiptItems && exp.receiptItems.length
                 ? exp.receiptItems.map(it => `
@@ -1179,17 +1195,32 @@
                 : `<div class="jp-line">🇯🇵 ${escapeHtml(exp.nameJp || exp.nameCn || '')}</div>
                    <div class="cn-line">🇹🇼 ${escapeHtml(exp.nameCn || translateJpToCn(exp.nameJp) || '請補中文品名')}</div>`}
             </div>
+            ${receiptExpenseBreakdown(exp,moneySymbol)}
             <span class="pay-badge ${payClass}">${pay}</span>
             ${exp.date ? `<span style="font-size:.72rem;color:#888;margin-left:5px;">${escapeHtml(exp.date)}</span>` : ''}
             <div style="color:#888;font-size:.75rem;margin-top:4px;">${isTwd?'台灣收據':'約合'} NT$${twdEquivalent.toLocaleString()}</div>
           </div>
           <div style="text-align:right;white-space:nowrap;">
+            <div style="font-size:.68rem;color:#667085">實付</div>
             <div style="font-weight:bold;color:var(--danger);font-size:1rem;">${moneySymbol}${Number(exp.jpy||0).toLocaleString()}</div>
             <button class="action-btn-sm" onclick="editExpense(${idx})">✏️</button>
             <button class="action-btn-sm" onclick="deleteExpense(${idx})">刪除</button>
           </div>`;
         container.appendChild(div);
       });
+    }
+
+    function receiptExpenseBreakdown(exp,symbol){
+      if(!exp.receiptItems?.length)return '';
+      const p=exp.receiptStructure,fmt=n=>symbol+Number(n).toLocaleString();
+      const base=exp.receiptItems.reduce((s,r)=>s+(r.role==='discount'?-Math.abs(Number(r.amount)||0):Number(r.amount)||0),0);
+      const parts=['明細 '+fmt(base)];
+      if(p&&Number(p.tax))parts.push('外加稅 +'+fmt(p.tax));
+      const total=exp.receiptTotal??p?.total;
+      if(total!==null&&total!==undefined)parts.push('收據合計 '+fmt(total));
+      if(p&&Number(p.paymentAdjustment))parts.push('付款折抵 −'+fmt(Math.abs(p.paymentAdjustment)));
+      parts.push('實付 '+fmt(exp.jpy||0));
+      return '<div style="font-size:.73rem;line-height:1.6;color:#526579;margin:6px 0;">'+parts.map(escapeHtml).join('；')+'</div>';
     }
 
     function escapeHtml(v) {
@@ -1404,7 +1435,7 @@
       if(!currentReceiptImage){ alert('請先拍攝或選擇收據照片。'); return; }
       const status=document.getElementById('receipt-status'),wrap=document.getElementById('ocr-progress-wrap'); wrap.style.display='block';
       const selected=document.getElementById('receipt-region')?.value || 'auto';
-      status.innerHTML='🔎 正在辨識收據。7.8.2 正在整理完整金額、商品明細與付款摘要。';
+      status.innerHTML='🔎 正在辨識收據。7.8.3 正在整理完整金額、商品明細與付款摘要。';
       try{
         let out, fallbackReason='';
         try{ out=await runPaddleOCR(currentReceiptImage); }
@@ -1479,7 +1510,7 @@
     }
 
 
-    // Receipt parser 7.8.2: retain source rows and check scoped summaries.
+    // Receipt parser 7.8.3: retain source rows and check scoped summaries.
     let lastReceiptStructure = null;
     function normalizeReceiptLine(raw){
       return String(raw??'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'')
@@ -1677,12 +1708,13 @@
     }
     function enforceReceiptLineRole(raw,role,idx,totalIndex){return classifyReceiptLine(raw,idx,totalIndex);}
     function detectReceiptMerchant(lines,type){
+      // Japanese receipt logos/company names often arrive with spaces between glyphs.
+      const normalized=lines.map(normalizeReceiptLine);
+      const company=normalized.find(x=>/タクシー/.test(x.replace(/\s/g,''))&&extractReceiptAmount(x)===null&&!/電話|TEL|受付|アプリ|配車|お忘れ|お気付/i.test(x.replace(/\s/g,'')));
+      if(type.code==='taxi'&&company)return company.replace(/\s/g,'');
       const known=lines.find(x=>/FamilyMart|ファミリーマート|7-?ELEVEN|セブン|ローソン|LAWSON|セイコーマート|Seicomart|COSTCO|好市多|全聯|全家|^TATSU$/i.test(x));
       if(known)return known.trim();
-      if(type.code==='taxi'){
-        const company=lines.find(x=>/タクシー/.test(x)&&extractReceiptAmount(x)===null&&!/電話|TEL|受付/.test(x));
-        if(company)return company;
-      }
+      if(type.code==='taxi')return '';
       return lines.slice(0,8).find(x=>extractReceiptAmount(x)===null&&!/電話|TEL|住所/.test(x)&&/タクシー|ホテル|旅館|商店|薬局|店$/.test(x))||'';
     }
     function receiptPaymentMethod(row){
@@ -1905,7 +1937,7 @@
       return 'item';
     }
     function receiptRoleLabel(role){ return role==='discount'?'➖ 折扣（扣除）':role==='add'?'➕ 加價／費用':'🛍️ 商品／服務'; }
-    let receiptTranslationJob=null,receiptDocumentRevision=0;
+    let receiptTranslationJob=null,receiptDocumentRevision=0,receiptTranslationAttempt=0;
     function sizeReceiptNameField(input){
       if(!input||input.tagName!=='TEXTAREA')return;
       input.style.height='auto';input.style.height=Math.max(42,Number(input.scrollHeight)||42)+'px';
@@ -1918,7 +1950,7 @@
       if(button){button.disabled=busy;button.setAttribute('aria-busy',String(busy));button.textContent=busy?'🌐 翻譯中…':'🌐 重新翻譯全部';}
     }
     function resetReceiptTranslation(){
-      receiptDocumentRevision++;
+      receiptDocumentRevision++;receiptTranslationAttempt=0;
       if(receiptTranslationJob){receiptTranslationJob.cancelled=true;receiptTranslationJob.controller?.abort();}
       receiptTranslationJob=null;
       showReceiptTranslationFeedback('辨識商品後，可重新翻譯品名。');
@@ -1926,13 +1958,15 @@
     function showReceiptRowTranslation(row,result){
       let note=row.querySelector('.translation-source');
       if(!note){note=document.createElement('div');row.appendChild(note);}
-      const needsReview=!result.complete||result.source==='dictionary-ocr'||!!result.errorReason;
+      const needsReview=!result.complete||result.source==='dictionary-ocr'||!!result.canonical||!!result.errorReason;
       note.className='translation-source receipt-translation-note'+(needsReview?' needs-review':'');
       if(result.errorReason)note.textContent=(result.retained?'已保留先前翻譯。':'')+receiptTranslationError(result.errorReason);
       else if(result.source==='dictionary-ocr')note.textContent='依近似字對照「'+result.canonical+'」；收據原文仍保留，請核對。';
       else if(result.source==='manual')note.textContent='已保留妳手動修改的中文品名。';
-      else if(result.source==='online'||result.source==='cache')note.textContent='網路翻譯，請對照商品核對。';
+      else if(result.source==='online')note.textContent='已完成本次網路翻譯，請對照商品核對。';
+      else if(result.source==='cache')note.textContent='沿用先前網路翻譯；按「重新翻譯全部」可重新查詢。';
       else note.textContent=result.complete?'常用品項詞庫對照。':'完整品名待確認，原文已保留。';
+      if(result.canonical&&result.source!=='dictionary-ocr')note.textContent+=' 原文可能是「'+result.canonical+'」，請核對。';
       row.classList.toggle('ocr-low-confidence',needsReview||row.dataset.ocrLow==='1');
       sizeReceiptNameField(row.querySelector('.receipt-cn'));
     }
@@ -1941,7 +1975,7 @@
       if(!jpInput||!cnInput)return {complete:true,source:'none'};
       const src=sanitizeReceiptProductName(jpInput.value),revision=receiptDocumentRevision;
       if(!src)return {complete:false,source:'empty'};
-      if(cnInput.dataset.manual==='1'){
+      if(cnInput.dataset.manual==='1'&&cnInput.value.trim()){
         const result={complete:true,source:'manual'};showReceiptRowTranslation(row,result);return result;
       }
       const request=Number(row.dataset.translationRequest||0)+1;row.dataset.translationRequest=String(request);
@@ -1951,13 +1985,13 @@
       try{result=await translateReceiptNameDetailed(src,{force,signal:job?.controller?.signal});}
       catch(e){result={text:'中文品名待確認',complete:false,source:'failed',errorReason:'unexpected'};}
       const stale=revision!==receiptDocumentRevision||job?.cancelled||row.dataset.translationRequest!==String(request)||sanitizeReceiptProductName(jpInput.value)!==src||!row.isConnected;
-      if(stale)return {complete:false,source:'stale'};
+      if(stale){if(row.dataset.translationRequest===String(request)){row.removeAttribute('aria-busy');cnInput.placeholder='中文對照';}return {complete:false,source:'stale',onlineAttempted:!!result.onlineAttempted};}
       row.removeAttribute('aria-busy');cnInput.placeholder='中文對照';
-      if(cnInput.dataset.manual==='1')return {complete:true,source:'manual'};
-      if(!result.complete&&prior.complete&&prior.text)result={...prior,retained:true,errorReason:result.errorReason||'invalid'};
+      if(cnInput.dataset.manual==='1'&&cnInput.value.trim())return {complete:true,source:'manual',onlineAttempted:!!result.onlineAttempted};
+      if((result.errorReason||!result.complete)&&prior.complete&&prior.text)result={...prior,retained:true,errorReason:result.errorReason||'invalid',onlineAttempted:!!result.onlineAttempted,canonical:result.canonical||''};
       cnInput.value=result.text;cnInput.dataset.auto='1';
       row.dataset.translationComplete=result.complete?'1':'0';row.dataset.translationSource=result.source||'';
-      showReceiptRowTranslation(row,result);return result;
+      result.updated=result.text!==prior.text;showReceiptRowTranslation(row,result);return result;
     }
     function translateAllReceiptRows(force=false){
       if(receiptTranslationJob)return receiptTranslationJob.promise;
@@ -1966,16 +2000,20 @@
         showReceiptTranslationFeedback('目前沒有商品明細可翻譯。請先重新 OCR；若照片只有付款區，請補拍商品明細。');
         return Promise.resolve({completed:0,failed:0});
       }
+      const attempt=force?++receiptTranslationAttempt:0,started=Date.now();
       const job={cancelled:false,controller:typeof AbortController!=='undefined'?new AbortController():null,promise:null};
       receiptTranslationJob=job;
-      showReceiptTranslationFeedback(`正在翻譯 0／${rows.length} 筆品名…`,true);
+      const prefix=force?`第 ${attempt} 次重新翻譯`:'自動翻譯';
+      showReceiptTranslationFeedback(`${prefix}：${force?'正在連網查詢':'正在處理'} 0／${rows.length} 筆品名…`,true);
       job.promise=(async()=>{
         const results=[];let finished=0;
         try{
+          // Yield to painting so a quick dictionary or cache pass is visible too.
+          await new Promise(resolve=>setTimeout(resolve,40));
           for(let i=0;i<rows.length&&!job.cancelled;i+=3){
             const batch=await Promise.allSettled(rows.slice(i,i+3).map(async row=>{
               const result=await translateReceiptRow(row,force,job);finished++;
-              if(!job.cancelled)showReceiptTranslationFeedback(`正在翻譯 ${finished}／${rows.length} 筆品名…`,true);
+              if(!job.cancelled)showReceiptTranslationFeedback(`${prefix}：已處理 ${finished}／${rows.length} 筆品名…`,true);
               return result;
             }));
             results.push(...batch.map(x=>x.status==='fulfilled'?x.value:{complete:false,source:'failed',errorReason:'unexpected'}));
@@ -1983,14 +2021,21 @@
           if(job.cancelled)return {completed:0,failed:0,cancelled:true};
           const failed=results.filter(x=>!x.complete||x.errorReason).length;
           const dictionary=results.filter(x=>!x.errorReason&&(x.source?.startsWith('dictionary')||x.source==='store-suffix')).length;
-          const online=results.filter(x=>!x.errorReason&&(x.source==='online'||x.source==='cache')).length;
+          const online=results.filter(x=>!x.errorReason&&x.source==='online').length;
+          const cached=results.filter(x=>!x.errorReason&&x.source==='cache').length;
+          const requests=results.filter(x=>x.onlineAttempted).length;
+          const updated=results.filter(x=>x.updated&&!x.errorReason).length;
+          const unchanged=results.filter(x=>x.complete&&!x.updated&&!x.errorReason&&x.source!=='manual').length;
           const retained=results.filter(x=>x.retained).length;
           const manual=results.filter(x=>x.source==='manual').length;
-          const suggestions=results.filter(x=>x.source==='dictionary-ocr').length;
+          const suggestions=results.filter(x=>x.source==='dictionary-ocr'||x.canonical).length;
           const reasons=[...new Set(results.filter(x=>x.errorReason).map(x=>receiptTranslationError(x.errorReason)))];
-          const summary=`本次翻譯${failed?'結束':'完成'}：${dictionary} 筆詞庫、${online} 筆網路翻譯${manual?'、'+manual+' 筆保留手動修改':''}${suggestions?'；'+suggestions+' 筆近似字請核對':''}${failed?'；'+failed+' 筆未能完成更新':''}${retained?'，已保留 '+retained+' 筆先前翻譯':''}。`;
+          const stamp=new Date().toLocaleTimeString('zh-TW',{hour12:false});
+          const summary=`${prefix}${failed?'結束':'完成'}（${stamp}）：已處理 ${rows.length} 筆，更新 ${updated} 筆、結果相同 ${unchanged} 筆${manual?'、保留手動修改 '+manual+' 筆':''}。本次連網 ${requests} 筆，成功 ${online} 筆${dictionary?'；詞庫 '+dictionary+' 筆':''}${cached?'；沿用先前網路翻譯 '+cached+' 筆':''}${suggestions?'；'+suggestions+' 筆原文近似字請核對':''}${failed?'；'+failed+' 筆未能完成更新':''}${retained?'，已保留 '+retained+' 筆既有品名':''}。`;
+          await new Promise(resolve=>setTimeout(resolve,Math.max(0,500-(Date.now()-started))));
+          if(job.cancelled)return {completed:0,failed:0,cancelled:true};
           showReceiptTranslationFeedback(summary+(reasons.length?' '+reasons.join(' '):''));
-          return {completed:rows.length-failed,failed};
+          return {completed:rows.length-failed,failed,requests,updated,unchanged,manual};
         }catch(e){
           if(!job.cancelled)showReceiptTranslationFeedback('本次翻譯未完成，原有資料已保留；請稍後再試。');
           return {completed:results.length,failed:rows.length-results.length};
@@ -2024,7 +2069,8 @@
                        <div class="receipt-role"><span>此列：</span><select class="input-control line-role"><option value="item">🛍️ 商品／服務</option><option value="add">➕ 加價／費用</option><option value="discount">➖ 折扣（扣除）</option></select><span class="role-hint"></span></div>
                        ${low?`<div class="receipt-row-warning">⚠️ 請確認：${escapeHtml((warningReasons.length?warningReasons:['OCR 可信度較低']).join('、'))}${confidence!==null?'（OCR '+Math.round(confidence*100)+'%）':''}。可直接修改、改類型或按 × 刪除。</div>`:''}`;
       const jpInput = row.querySelector('.receipt-jp'), cnInput=row.querySelector('.receipt-cn'), amtInput=row.querySelector('.line-amount'), roleSel=row.querySelector('.line-role');
-      row.dataset.translationComplete=cn?'1':'0';
+      const initialTranslation=region==='jp'?localReceiptTranslation(jp):{complete:!!cn,source:'original'};
+      row.dataset.translationComplete=initialTranslation.complete?'1':'0';row.dataset.translationSource=initialTranslation.source||'';
       roleSel.value=role;
       const syncRole=()=>{
         const r=roleSel.value; row.classList.toggle('role-discount',r==='discount'); row.classList.toggle('role-add',r==='add');
@@ -2044,7 +2090,7 @@
       });
       jpInput.addEventListener('change',()=>{ if(region==='jp') translateReceiptRow(row,false); });
       cnInput.addEventListener('input',e=>{
-        cnInput.dataset.manual='1';row.dataset.translationComplete='1';row.dataset.translationSource='manual';sizeReceiptNameField(cnInput);
+        cnInput.dataset.manual=cnInput.value.trim()?'1':'0';row.dataset.translationComplete=cnInput.value.trim()?'1':'0';row.dataset.translationSource='manual';sizeReceiptNameField(cnInput);
       });
       amtInput.addEventListener('input',()=>{ if(roleSel.value==='discount' && Number(amtInput.value)>0) amtInput.value=-Math.abs(Number(amtInput.value)); updateReceiptTotals(); });
       row.querySelector('.receipt-remove').onclick=()=>{ row.remove(); updateReceiptTotals(); };
@@ -2099,8 +2145,8 @@
       appData.expenses.push({id:Date.now().toString(),nameJp:pairs.map(x=>x.jp).filter(Boolean).join('、')||merchantJp||'收據消費',
         nameCn:pairs.map(x=>x.cn).filter(Boolean).join('、')||merchantCn||'收據消費',jpy:paid,amount:paid,receiptTotal:total,
         payment:document.getElementById('receipt-payment').value,date:new Date().toISOString().slice(0,10),receiptImage:currentReceiptImage,
-        receiptItems:pairs,receiptRegion:region,receiptCurrency:region==='tw'?'TWD':'JPY',receiptSummaryOnly:summaryOnly,
-        receiptStructure:p?{parserVersion:'7.8.2',type:p.type.code,total,paid,tax:p.taxSum,includedTax:p.includedTaxSum,paymentAdjustment:p.payAdjust,
+        merchantJp,merchantCn,receiptItems:pairs,receiptRegion:region,receiptCurrency:region==='tw'?'TWD':'JPY',receiptSummaryOnly:summaryOnly,
+        receiptStructure:p?{parserVersion:'7.8.3',type:p.type.code,total,paid,tax:p.taxSum,includedTax:p.includedTaxSum,paymentAdjustment:p.payAdjust,
           paymentAdjustments:p.payAdjustRows,verification:summaryOnly?'summary_only':p.fullVerified?'matched':'unverified',paidSource:p.paidSource,
           rawText:document.getElementById('ocr-raw-text').value}:null});
       saveData();closeModal('modal-receipt');renderExpenses();
@@ -2232,6 +2278,7 @@
 
     // --- Modal Helper ---
     function closeModal(modalId) {
+      if(modalId==='modal-receipt')resetReceiptTranslation();
       document.getElementById(modalId).classList.remove('active');
     }
 
